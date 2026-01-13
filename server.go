@@ -4,17 +4,18 @@ import (
 	"fmt"
 	"net"
 	"os"
+
+	"github.com/tony-montemuro/http/message"
 )
 
 func handle(c net.Conn) {
-	data := make([]byte, 1024)
-	n, err := c.Read(data)
+	parser := message.RequestParser{Connection: c}
+	_, err := parser.Parse()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "could not read data from connection: %s", err.Error())
+		fmt.Fprintf(os.Stderr, "could not parse request: %s", err.Error())
 		c.Close()
 	}
 
-	fmt.Printf("read %d bytes from connection: %s", n, string(data[:n]))
 	c.Close()
 }
 
