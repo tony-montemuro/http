@@ -1,4 +1,4 @@
-package parser
+package message
 
 import (
 	"testing"
@@ -46,15 +46,8 @@ func TestEscapeSequence_unescape(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			res, err := escapeSequence(tt.arr).unescape(tt.index)
 
-			if err != nil {
-				if !tt.expectError {
-					t.Errorf("got unexpected error: %s", err.Error())
-				}
-				return
-			}
-
-			if tt.expectError {
-				t.Error("did not get expected error!")
+			ok := assert.ErrorStatus(t, err, tt.expectError)
+			if !ok {
 				return
 			}
 
@@ -118,15 +111,8 @@ func TestAbsPathUriParser_parse(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			res, err := absPathUriParser(tt.uri).parse()
 
-			if err != nil {
-				if !tt.expectError {
-					t.Errorf("got unexpected error: %s", err.Error())
-				}
-				return
-			}
-
-			if tt.expectError {
-				t.Error("did not get expected error!")
+			ok := assert.ErrorStatus(t, err, tt.expectError)
+			if !ok {
 				return
 			}
 
@@ -212,15 +198,9 @@ func TestUriPathParser_parse(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			res, err := uriPathParser(tt.path).parse()
 
-			if err != nil {
-				if !tt.expectError {
-					t.Errorf("got unexpected error: %s (%v)", err.Error(), res)
-				}
+			ok := assert.ErrorStatus(t, err, tt.expectError)
+			if !ok {
 				return
-			}
-
-			if tt.expectError {
-				t.Errorf("did not get expected error! result: %s", res)
 			}
 
 			assert.MatrixEqual(t, res, tt.expected)
@@ -291,15 +271,8 @@ func TestUriParamsParser_parse(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			res, err := uriParamsParser(tt.params).parse()
 
-			if err != nil {
-				if !tt.expectError {
-					t.Errorf("got unexpected error: %s (%v)", err.Error(), res)
-				}
-				return
-			}
-
-			if tt.expectError {
-				t.Errorf("did not get expected error! result: %s", res)
+			ok := assert.ErrorStatus(t, err, tt.expectError)
+			if !ok {
 				return
 			}
 
@@ -365,15 +338,8 @@ func TestUriQueryParser_parse(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			res, err := uriQueryParser(tt.query).parse()
 
-			if err != nil {
-				if !tt.expectError {
-					t.Errorf("got unexpected error: %s (%v)", err.Error(), res)
-				}
-				return
-			}
-
-			if tt.expectError {
-				t.Errorf("did not get expected error! result: %s", res)
+			ok := assert.ErrorStatus(t, err, tt.expectError)
+			if !ok {
 				return
 			}
 
@@ -428,15 +394,8 @@ func TestSafeUriParser_parse(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			res, err := safeUriParser(tt.uri).parse()
 
-			if err != nil {
-				if !tt.expectError {
-					t.Errorf("got unexpected error: %s", err.Error())
-				}
-				return
-			}
-
-			if tt.expectError {
-				t.Errorf("did not get expected error!")
+			ok := assert.ErrorStatus(t, err, tt.expectError)
+			if !ok {
 				return
 			}
 

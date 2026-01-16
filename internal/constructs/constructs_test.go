@@ -1,4 +1,4 @@
-package parser
+package constructs
 
 import (
 	"testing"
@@ -26,7 +26,7 @@ type parseCheck struct {
 	expectError bool
 }
 
-func TestHttpByte_isEscape(t *testing.T) {
+func TestHttpByte_IsEscape(t *testing.T) {
 	tests := []byteCheck{
 		{
 			name:     "Percent sign (%)",
@@ -42,12 +42,12 @@ func TestHttpByte_isEscape(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			assert.Equal(t, httpByte(tt.byte).isEscape(), tt.expected)
+			assert.Equal(t, HttpByte(tt.byte).IsEscape(), tt.expected)
 		})
 	}
 }
 
-func TestHttpByte_isExtra(t *testing.T) {
+func TestHttpByte_IsExtra(t *testing.T) {
 	tests := []byteCheck{
 		{
 			name:     "Exclaimation mark (!)",
@@ -68,12 +68,12 @@ func TestHttpByte_isExtra(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			assert.Equal(t, httpByte(tt.byte).isExtra(), tt.expected)
+			assert.Equal(t, HttpByte(tt.byte).IsExtra(), tt.expected)
 		})
 	}
 }
 
-func TestHttpByte_isUnsafe(t *testing.T) {
+func TestHttpByte_IsUnsafe(t *testing.T) {
 	tests := []byteCheck{
 		{
 			name:     "Byte 0",
@@ -119,12 +119,12 @@ func TestHttpByte_isUnsafe(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			assert.Equal(t, httpByte(tt.byte).isUnsafe(), tt.expected)
+			assert.Equal(t, HttpByte(tt.byte).IsUnsafe(), tt.expected)
 		})
 	}
 }
 
-func TestHttpByte_isSafe(t *testing.T) {
+func TestHttpByte_IsSafe(t *testing.T) {
 	tests := []byteCheck{
 		{
 			name:     "Dollar sign byte ($)",
@@ -164,12 +164,12 @@ func TestHttpByte_isSafe(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			assert.Equal(t, httpByte(tt.byte).isSafe(), tt.expected)
+			assert.Equal(t, HttpByte(tt.byte).IsSafe(), tt.expected)
 		})
 	}
 }
 
-func TestHttpByte_isReserved(t *testing.T) {
+func TestHttpByte_IsReserved(t *testing.T) {
 	tests := []byteCheck{
 		{
 			name:     "Semicolon byte (;)",
@@ -210,12 +210,12 @@ func TestHttpByte_isReserved(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			assert.Equal(t, httpByte(tt.byte).isReserved(), tt.expected)
+			assert.Equal(t, HttpByte(tt.byte).IsReserved(), tt.expected)
 		})
 	}
 }
 
-func TestHttpByte_isHex(t *testing.T) {
+func TestHttpByte_IsHex(t *testing.T) {
 	tests := []byteCheck{
 		{
 			name:     "Numeric byte (0)",
@@ -276,12 +276,12 @@ func TestHttpByte_isHex(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			assert.Equal(t, httpByte(tt.byte).isHex(), tt.expected)
+			assert.Equal(t, HttpByte(tt.byte).IsHex(), tt.expected)
 		})
 	}
 }
 
-func TestHttpByte_isNumeric(t *testing.T) {
+func TestHttpByte_IsNumeric(t *testing.T) {
 	tests := []byteCheck{
 		{
 			name:     "Numeric byte (0)",
@@ -317,12 +317,12 @@ func TestHttpByte_isNumeric(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			assert.Equal(t, httpByte(tt.byte).isNumeric(), tt.expected)
+			assert.Equal(t, HttpByte(tt.byte).IsNumeric(), tt.expected)
 		})
 	}
 }
 
-func TestHttpByte_isAlpha(t *testing.T) {
+func TestHttpByte_IsAlpha(t *testing.T) {
 	tests := []byteCheck{
 		{
 			name:     "Lower alpha byte (a)",
@@ -363,12 +363,12 @@ func TestHttpByte_isAlpha(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			assert.Equal(t, httpByte(tt.byte).isAlpha(), tt.expected)
+			assert.Equal(t, HttpByte(tt.byte).IsAlpha(), tt.expected)
 		})
 	}
 }
 
-func TestHttpByte_isUnreserved(t *testing.T) {
+func TestHttpByte_IsUnreserved(t *testing.T) {
 	tests := []byteCheck{
 		{
 			name:     "Lower alpha byte (F)",
@@ -414,12 +414,12 @@ func TestHttpByte_isUnreserved(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			assert.Equal(t, httpByte(tt.byte).isUnreserved(), tt.expected)
+			assert.Equal(t, HttpByte(tt.byte).IsUnreserved(), tt.expected)
 		})
 	}
 }
 
-func TestHttpByte_isIspChar(t *testing.T) {
+func TestHttpByte_IsIsPChar(t *testing.T) {
 	tests := []byteCheck{
 		{
 			name:     "Lower alpha byte (F)",
@@ -470,12 +470,12 @@ func TestHttpByte_isIspChar(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			assert.Equal(t, httpByte(tt.byte).ispChar(), tt.expected)
+			assert.Equal(t, HttpByte(tt.byte).IsPChar(), tt.expected)
 		})
 	}
 }
 
-func TestHttpByte_isControl(t *testing.T) {
+func TestHttpByte_IsControl(t *testing.T) {
 	tests := []byteCheck{
 		{
 			name:     "Last control byte (31)",
@@ -491,12 +491,12 @@ func TestHttpByte_isControl(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			assert.Equal(t, httpByte(tt.byte).isControl(), tt.expected)
+			assert.Equal(t, HttpByte(tt.byte).IsControl(), tt.expected)
 		})
 	}
 }
 
-func TestHttpByte_isUSAscii(t *testing.T) {
+func TestHttpByte_IsUSAscii(t *testing.T) {
 	tests := []byteCheck{
 		{
 			name:     "Last US ASCII byte (127)",
@@ -512,12 +512,12 @@ func TestHttpByte_isUSAscii(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			assert.Equal(t, httpByte(tt.byte).isUSAscii(), tt.expected)
+			assert.Equal(t, HttpByte(tt.byte).IsUSAscii(), tt.expected)
 		})
 	}
 }
 
-func TestHttpByte_isQdTextByte(t *testing.T) {
+func TestHttpByte_IsQdTextByte(t *testing.T) {
 	tests := []byteCheck{
 		{
 			name:     "Alpha character (z)",
@@ -553,12 +553,12 @@ func TestHttpByte_isQdTextByte(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			assert.Equal(t, httpByte(tt.byte).isQdTextByte(), tt.expected)
+			assert.Equal(t, HttpByte(tt.byte).IsQdTextByte(), tt.expected)
 		})
 	}
 }
 
-func TestHttpByte_isTSpecial(t *testing.T) {
+func TestHttpByte_IsTSpecial(t *testing.T) {
 	tests := []byteCheck{
 		{
 			name:     "Alpha character (z)",
@@ -594,12 +594,12 @@ func TestHttpByte_isTSpecial(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			assert.Equal(t, httpByte(tt.byte).isTSpecial(), tt.expected)
+			assert.Equal(t, HttpByte(tt.byte).IsTSpecial(), tt.expected)
 		})
 	}
 }
 
-func TestToken_validate(t *testing.T) {
+func TestToken_Validate(t *testing.T) {
 	tests := []validateCheck{
 		{
 			name:        "Standard token (abc!123)",
@@ -630,17 +630,8 @@ func TestToken_validate(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := token(tt.string).validate()
-			if err != nil {
-				if !tt.expectError {
-					t.Errorf("got unexpected error: %s", err.Error())
-				}
-				return
-			}
-
-			if tt.expectError {
-				t.Error("did not get expected error!")
-			}
+			err := Token(tt.string).Validate()
+			assert.ErrorStatus(t, err, tt.expectError)
 		})
 	}
 }
@@ -681,22 +672,13 @@ func TestQuotedString_validate(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := quotedString(tt.string).validate()
-			if err != nil {
-				if !tt.expectError {
-					t.Errorf("got unexpected error: %s", err.Error())
-				}
-				return
-			}
-
-			if tt.expectError {
-				t.Error("did not get expected error!")
-			}
+			err := QuotedString(tt.string).validate()
+			assert.ErrorStatus(t, err, tt.expectError)
 		})
 	}
 }
 
-func TestQuotedString_parse(t *testing.T) {
+func TestQuotedString_Parse(t *testing.T) {
 	tests := []parseCheck{
 		{
 			name:        "Standard quoted string (\"abc!123\")",
@@ -735,16 +717,11 @@ func TestQuotedString_parse(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			res, err := quotedString(tt.string).parse()
-			if err != nil {
-				if !tt.expectError {
-					t.Errorf("got unexpected error: %s (res: %s)", err.Error(), res)
-				}
-				return
-			}
+			res, err := QuotedString(tt.string).Parse()
 
-			if tt.expectError {
-				t.Errorf("did not get expected error! res: %s", res)
+			ok := assert.ErrorStatus(t, err, tt.expectError)
+			if !ok {
+				return
 			}
 
 			assert.Equal(t, res, tt.expected)
@@ -752,7 +729,7 @@ func TestQuotedString_parse(t *testing.T) {
 	}
 }
 
-func TestWord_validate(t *testing.T) {
+func TestWord_Validate(t *testing.T) {
 	tests := []validateCheck{
 		{
 			name:        "Standard token (abc!123)",
@@ -808,22 +785,13 @@ func TestWord_validate(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := word(tt.string).validate()
-			if err != nil {
-				if !tt.expectError {
-					t.Errorf("got unexpected error: %s", err.Error())
-				}
-				return
-			}
-
-			if tt.expectError {
-				t.Error("did not get expected error!")
-			}
+			err := Word(tt.string).Validate()
+			assert.ErrorStatus(t, err, tt.expectError)
 		})
 	}
 }
 
-func TestWord_parse(t *testing.T) {
+func TestWord_Parse(t *testing.T) {
 	tests := []parseCheck{
 		{
 			name:        "Standard token (abc!123)",
@@ -883,11 +851,10 @@ func TestWord_parse(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			res, err := word(tt.string).parse()
-			if err != nil {
-				if !tt.expectError {
-					t.Errorf("got unexpected error: %s (res: %s)", err.Error(), res)
-				}
+			res, err := Word(tt.string).Parse()
+
+			ok := assert.ErrorStatus(t, err, tt.expectError)
+			if !ok {
 				return
 			}
 
@@ -898,7 +865,7 @@ func TestWord_parse(t *testing.T) {
 	}
 }
 
-func TestHex_value(t *testing.T) {
+func TestHex_Value(t *testing.T) {
 	tests := []struct {
 		name        string
 		byte        byte
@@ -932,17 +899,11 @@ func TestHex_value(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			res, err := hex(tt.byte).value()
+			res, err := Hex(tt.byte).Value()
 
-			if err != nil {
-				if !tt.expectError {
-					t.Errorf("got unexpected error: %s", err.Error())
-				}
+			ok := assert.ErrorStatus(t, err, tt.expectError)
+			if !ok {
 				return
-			}
-
-			if tt.expectError {
-				t.Error("did not get expected error!")
 			}
 
 			assert.Equal(t, res, tt.expected)
@@ -950,7 +911,7 @@ func TestHex_value(t *testing.T) {
 	}
 }
 
-func TestText_validate(t *testing.T) {
+func TestText_Validate(t *testing.T) {
 	tests := []validateCheck{
 		{
 			name:        "Generic text",
@@ -986,23 +947,13 @@ func TestText_validate(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := text(tt.string).validate()
-
-			if err != nil {
-				if !tt.expectError {
-					t.Errorf("got unexpected error: %s", err.Error())
-				}
-				return
-			}
-
-			if tt.expectError {
-				t.Error("did not get expected error!")
-			}
+			err := Text(tt.string).Validate()
+			assert.ErrorStatus(t, err, tt.expectError)
 		})
 	}
 }
 
-func TestDateParser_parse(t *testing.T) {
+func TestDate_Parse(t *testing.T) {
 	tests := []struct {
 		name        string
 		dateVal     string
@@ -1049,17 +1000,10 @@ func TestDateParser_parse(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			res, err := dateParser(tt.dateVal).parse()
+			res, err := Date(tt.dateVal).Parse()
 
-			if err != nil {
-				if !tt.expectError {
-					t.Errorf("got unexpected error: %s (%v)", err.Error(), res)
-				}
-				return
-			}
-
-			if tt.expectError {
-				t.Errorf("did not get expected error! result: %s", res)
+			ok := assert.ErrorStatus(t, err, tt.expectError)
+			if !ok {
 				return
 			}
 
@@ -1068,74 +1012,7 @@ func TestDateParser_parse(t *testing.T) {
 	}
 }
 
-func TestProductTokenParser_parse(t *testing.T) {
-	tests := []struct {
-		name         string
-		productToken string
-		expected     parsedProductToken
-		expectError  bool
-	}{
-		{
-			name:         "Standard product token",
-			productToken: "Apache",
-			expected: parsedProductToken{
-				Product: "Apache",
-				Version: "",
-			},
-			expectError: false,
-		},
-		{
-			name:         "More complex product token",
-			productToken: "libwww/2.17be",
-			expected: parsedProductToken{
-				Product: "libwww",
-				Version: "2.17be",
-			},
-			expectError: false,
-		},
-		{
-			name:         "Product token with valid punctuation",
-			productToken: "lib_http-client/1.0.0-beta_2",
-			expected: parsedProductToken{
-				Product: "lib_http-client",
-				Version: "1.0.0-beta_2",
-			},
-		},
-		{
-			name:         "Product token with multiple forward slashes",
-			productToken: "Apache/2.0/Test",
-			expectError:  true,
-		},
-		{
-			name:         "Product token containing invalid characters",
-			productToken: "go/te[@]st",
-			expectError:  true,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			res, err := productTokenParser(tt.productToken).parse()
-
-			if err != nil {
-				if !tt.expectError {
-					t.Errorf("got unexpected error: %s (%v)", err.Error(), res)
-				}
-				return
-			}
-
-			if tt.expectError {
-				t.Errorf("did not get expected error! result: %s", res)
-				return
-			}
-
-			assert.Equal(t, res.Product, tt.expected.Product)
-			assert.Equal(t, res.Version, tt.expected.Version)
-		})
-	}
-}
-
-func TestComment_validate(t *testing.T) {
+func TestComment_Validate(t *testing.T) {
 	tests := []validateCheck{
 		{
 			name:        "Empty comment",
@@ -1195,17 +1072,7 @@ func TestComment_validate(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		err := comment(tt.string).validate()
-
-		if err != nil {
-			if !tt.expectError {
-				t.Errorf("got unexpected error: %s", err.Error())
-			}
-			return
-		}
-
-		if tt.expectError {
-			t.Error("did not get expected error!")
-		}
+		err := Comment(tt.string).Validate()
+		assert.ErrorStatus(t, err, tt.expectError)
 	}
 }

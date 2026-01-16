@@ -1,11 +1,15 @@
 package message
 
 import (
+	"bufio"
+	"bytes"
+	"fmt"
+	"io"
 	"net"
 	"net/mail"
 	"time"
 
-	"github.com/tony-montemuro/http/internal/parser"
+	"github.com/tony-montemuro/http/internal/constructs"
 )
 
 type Method string
@@ -16,25 +20,27 @@ const (
 	MethodPost Method = "POST"
 )
 
-func (m Method) IsValid() bool {
+func (m Method) Validate() error {
 	switch m {
 	case MethodGet, MethodHead, MethodPost:
-		return true
+		return nil
 	}
-	return false
+	return fmt.Errorf("invalid method")
 }
 
 type ContentEncoding string
 
 const (
-	ContentEncodingXGzip     ContentEncoding = "x-gzip"
-	ContentEncodingXCompress ContentEncoding = "x-compress"
+	ContentEncodingXGzip     = "x-gzip"
+	ContentEncodingXCompress = "x-compress"
 )
 
-type RequestLine struct {
-	Method  Method
-	Uri     AbsPathUri
-	Version string
+func (e ContentEncoding) Validate() error {
+	switch e {
+	case ContentEncodingXGzip, ContentEncodingXCompress:
+		return nil
+	}
+	return fmt.Errorf("unknown encoding")
 }
 
 type PragmaDirectives struct {
@@ -63,6 +69,12 @@ type ContentType struct {
 	Parameters map[string]string
 }
 
+type RequestLine struct {
+	Method  Method
+	Uri     AbsPathUri
+	Version string
+}
+
 type RequestHeaders struct {
 	Date            time.Time
 	Pragma          PragmaDirectives
@@ -89,89 +101,57 @@ type Request struct {
 	Body    Body
 }
 
-type AbsPathUri struct {
-	Path   [][]byte
-	Params [][]byte
-	Query  []byte
-}
-
 type RequestParser struct {
 	Connection net.Conn
 }
 
 func (p *RequestParser) Parse() (*Request, error) {
-	data := make([]byte, 1024)
-	_, err := p.Connection.Read(data)
+	p.Connection.SetReadDeadline(time.Now().Add(5 * time.Second))
+	defer p.Connection.SetReadDeadline(time.Time{})
 
+	reader := bufio.NewReader(p.Connection)
+
+	lineBuf, err := reader.ReadBytes('\n')
+	if err != nil {
+		return nil, err
+	}
+	if !bytes.HasSuffix(lineBuf, []byte(constructs.Crlf)) {
+		return nil, fmt.Errorf("malformed header suffix")
+	}
+
+	line, err := requestLineParser(bytes.Trim(lineBuf, constructs.Crlf)).parse()
 	if err != nil {
 		return nil, err
 	}
 
-	parsedRequest, err := parser.RequestParser(data).Parse()
+	var headerBuf bytes.Buffer
+	for {
+		line, err := reader.ReadString('\n')
+		if err != nil {
+			return nil, err
+		}
+		if line == "\r\n" {
+			break
+		}
+
+		headerBuf.WriteString(line)
+	}
+
+	headers, err := requestHeadersParser(bytes.Trim(headerBuf.Bytes(), constructs.Crlf)).Parse()
 	if err != nil {
 		return nil, err
 	}
 
-	return &Request{
-		Line:    convertToRequestLine(parsedRequest.Line),
-		Headers: convertToRequestHeader(parsedRequest.Headers),
-		Body:    convertToRequestBody(parsedRequest.Body),
-	}, nil
-}
-
-func convertToRequestLine(parsed parser.ParsedRequestLine) RequestLine {
-	return RequestLine{
-		Method: Method(parsed.Method),
-		Uri: AbsPathUri{
-			Path:   parsed.Uri.Path,
-			Params: parsed.Uri.Params,
-			Query:  parsed.Uri.Query,
-		},
-		Version: string(parsed.Version),
-	}
-}
-
-func convertToRequestHeader(parsed parser.ParsedRequestHeaders) RequestHeaders {
-	headers := RequestHeaders{
-		Date: parsed.Date,
-		Pragma: PragmaDirectives{
-			Flags:   parsed.Pragma.Flags,
-			Options: parsed.Pragma.Options,
-		},
-		Authorization: AuthorizationCredentials{
-			Scheme:     parsed.Authorization.Scheme,
-			Parameters: parsed.Authorization.Parameters,
-		},
-		From:    parsed.From,
-		Referer: parsed.Referer,
-		UserAgent: UserAgent{
-			Comments: parsed.UserAgent.Comments,
-			Products: []ProductVersion{},
-		},
-		IfModifiedSince: parsed.IfModifiedSince,
-		ContentEncoding: ContentEncoding(parsed.ContentEncoding),
-		ContentLength:   parsed.ContentLength,
-		ContentType:     ContentType(parsed.ContentType),
-		Expires:         parsed.Expires,
-		LastModified:    parsed.LastModified,
-		Unrecognized:    parsed.Unrecognized,
-		raw:             parsed.Raw,
+	bodyBytes := make([]byte, headers.ContentLength)
+	_, err = io.ReadFull(reader, bodyBytes)
+	if err != nil {
+		return nil, err
 	}
 
-	for _, product := range parsed.UserAgent.Products {
-		headers.UserAgent.Products = append(headers.UserAgent.Products, ProductVersion{
-			Product: product.Product,
-			Version: product.Version,
-		})
+	body, err := requestBodyParser(bodyBytes).parse(headers)
+	if err != nil {
+		return nil, err
 	}
 
-	for _, method := range parsed.Allow {
-		headers.Allow = append(headers.Allow, Method(method))
-	}
-
-	return headers
-}
-
-func convertToRequestBody(body []byte) Body {
-	return Body(body)
+	return &Request{Line: line, Headers: headers, Body: body}, nil
 }

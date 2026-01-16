@@ -1,8 +1,10 @@
-package parser
+package message
 
 import (
 	"bytes"
 	"fmt"
+
+	"github.com/tony-montemuro/http/internal/constructs"
 )
 
 type escapeSequence []byte
@@ -15,7 +17,7 @@ func (s escapeSequence) unescape(i int) (byte, error) {
 			return b, ClientError{message: fmt.Sprintf("truncated escape sequence: (char pos: %d, \"%s\")", i+j-1, s)}
 		}
 
-		val, err := hex(s[i+j]).value()
+		val, err := constructs.Hex(s[i+j]).Value()
 		if err != nil {
 			return b, ClientError{message: fmt.Sprintf("malformed escape sequence: (char pos: %d, \"%s\")", i+j, s[:i+j])}
 		}
@@ -40,12 +42,12 @@ func (ap absPathUriParser) parse() (AbsPathUri, error) {
 		return uri, ClientError{message: "Invalid request uri: missing uri"}
 	}
 
-	if ap[0] != byteSeparator {
-		return uri, ClientError{fmt.Sprintf("Invalid request uri: uri must begin with '%c'", byteSeparator)}
+	if ap[0] != constructs.ByteSeparator {
+		return uri, ClientError{message: fmt.Sprintf("Invalid request uri: uri must begin with '%c'", constructs.ByteSeparator)}
 	}
 
-	paramsIndex := bytes.IndexByte(ap, byteParam)
-	queryIndex := bytes.IndexByte(ap, byteQuery)
+	paramsIndex := bytes.IndexByte(ap, constructs.ByteParam)
+	queryIndex := bytes.IndexByte(ap, constructs.ByteQuery)
 
 	var paramsSlice []byte
 	var querySlice []byte
@@ -89,7 +91,7 @@ type uriPathParser []byte
 
 func (p uriPathParser) parse() ([][]byte, error) {
 	var path [][]byte
-	unescaped := bytes.Split(p, []byte{byte(byteSeparator)})
+	unescaped := bytes.Split(p, []byte{byte(constructs.ByteSeparator)})
 
 	// special case: if we have at least 1 segment, the first segment cannot be empty according to RFC 1945 (see: https://datatracker.ietf.org/doc/html/rfc1945#section-3.2.1)
 	if len(unescaped) > 1 && len(unescaped[0]) == 0 {
@@ -101,20 +103,20 @@ func (p uriPathParser) parse() ([][]byte, error) {
 		var part []byte
 
 		for j < len(p) {
-			b := httpByte(p[j])
+			b := constructs.HttpByte(p[j])
 
-			if b.isEscape() {
+			if b.IsEscape() {
 				c, err := escapeSequence(p).unescape(j)
 				if err != nil {
 					return path, err
 				}
 				j += 3
-				b = httpByte(c)
+				b = constructs.HttpByte(c)
 			} else {
 				j++
 			}
 
-			if !b.ispChar() {
+			if !b.IsPChar() {
 				return path, fmt.Errorf("path contains invalid byte (%s)", p)
 			}
 
@@ -132,25 +134,25 @@ type uriParamsParser []byte
 func (p uriParamsParser) parse() ([][]byte, error) {
 	var params [][]byte
 
-	for p := range bytes.SplitSeq(p, []byte{byte(byteParam)}) {
+	for p := range bytes.SplitSeq(p, []byte{byte(constructs.ByteParam)}) {
 		j := 0
 		var param []byte
 
 		for j < len(p) {
-			b := httpByte(p[j])
+			b := constructs.HttpByte(p[j])
 
-			if b.isEscape() {
+			if b.IsEscape() {
 				c, err := escapeSequence(p).unescape(j)
 				if err != nil {
 					return params, err
 				}
 				j += 3
-				b = httpByte(c)
+				b = constructs.HttpByte(c)
 			} else {
 				j++
 			}
 
-			if !b.ispChar() && b != byteSeparator {
+			if !b.IsPChar() && b != constructs.ByteSeparator {
 				return params, fmt.Errorf("params contains invalid byte (%s)", p)
 			}
 
@@ -170,20 +172,20 @@ func (q uriQueryParser) parse() ([]byte, error) {
 	i := 0
 
 	for i < len(q) {
-		b := httpByte(q[i])
+		b := constructs.HttpByte(q[i])
 
-		if b.isEscape() {
+		if b.IsEscape() {
 			c, err := escapeSequence(q).unescape(i)
 			if err != nil {
 				return query, err
 			}
 			i += 3
-			b = httpByte(c)
+			b = constructs.HttpByte(c)
 		} else {
 			i++
 		}
 
-		if !b.isReserved() && !b.isUnreserved() {
+		if !b.IsReserved() && !b.IsUnreserved() {
 			return query, fmt.Errorf("queries contain invalid byte (%s)", q)
 		}
 
@@ -200,20 +202,20 @@ func (u safeUriParser) parse() (string, error) {
 	i := 0
 
 	for i < len(u) {
-		b := httpByte(u[i])
+		b := constructs.HttpByte(u[i])
 
-		if b.isEscape() {
+		if b.IsEscape() {
 			c, err := escapeSequence(u).unescape(i)
 			if err != nil {
 				return string(u), err
 			}
 			i += 3
-			b = httpByte(c)
+			b = constructs.HttpByte(c)
 		} else {
 			i++
 		}
 
-		if b.isUnsafe() && b != '#' {
+		if b.IsUnsafe() && b != '#' {
 			return string(u), fmt.Errorf("uri contains at least 1 unsafe character (%s)", u)
 		}
 

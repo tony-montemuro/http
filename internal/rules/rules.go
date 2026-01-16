@@ -1,4 +1,4 @@
-package parser
+package rules
 
 import (
 	"strings"
@@ -6,12 +6,12 @@ import (
 	"github.com/tony-montemuro/http/internal/lws"
 )
 
-type rulesExtractor string
+type Extractor string
 
-func (s rulesExtractor) extract() []string {
+func (e Extractor) Extract() []string {
 	rules := []string{}
 
-	parts := strings.Split(string(s), ",")
+	parts := strings.Split(string(e), ",")
 	for i, part := range parts {
 		if i+1 == len(parts) {
 			rules = append(rules, lws.TrimLeft(part))

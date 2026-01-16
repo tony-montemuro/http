@@ -1,4 +1,4 @@
-package parser
+package message
 
 import (
 	"bytes"
@@ -10,7 +10,7 @@ import (
 
 type requestBodyParser []byte
 
-func (rb requestBodyParser) Parse(rh ParsedRequestHeaders) ([]byte, error) {
+func (rb requestBodyParser) parse(rh RequestHeaders) ([]byte, error) {
 	var body []byte
 	length := rh.ContentLength
 
@@ -32,10 +32,10 @@ func (d requestBodyDecoder) decode() ([]byte, error) {
 	var err error
 	reader := bytes.NewReader([]byte(d))
 
-	switch string(d) {
-	case "x-gzip":
+	switch ContentEncoding(d) {
+	case ContentEncodingXGzip:
 		res, err = gzipDecode(reader)
-	case "x-compress":
+	case ContentEncodingXCompress:
 		res, err = compressDecode(reader)
 	default:
 		res, err = io.ReadAll(reader)

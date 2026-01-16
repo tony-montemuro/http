@@ -1,4 +1,4 @@
-package parser
+package message
 
 import (
 	"net/mail"
@@ -12,15 +12,15 @@ func TestRequestHeaderParser_Parse(t *testing.T) {
 	tests := []struct {
 		name        string
 		input       string
-		expected    ParsedRequestHeaders
+		expected    RequestHeaders
 		expectError bool
 	}{
 		{
 			name:  "Minimal valid headers",
 			input: "Allow: GET",
-			expected: ParsedRequestHeaders{
-				Allow: []string{"GET"},
-				Raw: map[string]string{
+			expected: RequestHeaders{
+				Allow: []Method{"GET"},
+				raw: map[string]string{
 					"Allow": "GET",
 				},
 			},
@@ -29,15 +29,15 @@ func TestRequestHeaderParser_Parse(t *testing.T) {
 		{
 			name:  "Multiple standard headers",
 			input: "Allow: GET\r\nUser-Agent: Client/1.0\r\nDate: Sun, 06 Nov 1994 08:49:37 GMT",
-			expected: ParsedRequestHeaders{
-				Allow: []string{"GET"},
-				UserAgent: parsedUserAgent{
-					Products: []parsedProductToken{
+			expected: RequestHeaders{
+				Allow: []Method{"GET"},
+				UserAgent: UserAgent{
+					Products: []ProductVersion{
 						{Product: "Client", Version: "1.0"},
 					},
 				},
 				Date: time.Date(1994, 11, 6, 8, 49, 37, 0, time.FixedZone("GMT", 0)),
-				Raw: map[string]string{
+				raw: map[string]string{
 					"Allow":      "GET",
 					"User-Agent": "Client/1.0",
 					"Date":       "Sun, 06 Nov 1994 08:49:37 GMT",
@@ -48,11 +48,11 @@ func TestRequestHeaderParser_Parse(t *testing.T) {
 		{
 			name:  "Unknown header",
 			input: "X-Weird-Header: some-value",
-			expected: ParsedRequestHeaders{
+			expected: RequestHeaders{
 				Unrecognized: map[string]string{
 					"X-Weird-Header": "some-value",
 				},
-				Raw: map[string]string{
+				raw: map[string]string{
 					"X-Weird-Header": "some-value",
 				},
 			},
@@ -61,11 +61,11 @@ func TestRequestHeaderParser_Parse(t *testing.T) {
 		{
 			name:  "Header with empty value",
 			input: "X-Foo:",
-			expected: ParsedRequestHeaders{
+			expected: RequestHeaders{
 				Unrecognized: map[string]string{
 					"X-Foo": "",
 				},
-				Raw: map[string]string{
+				raw: map[string]string{
 					"X-Foo": "",
 				},
 			},
@@ -73,15 +73,15 @@ func TestRequestHeaderParser_Parse(t *testing.T) {
 		{
 			name:  "Excessive but valid LWS",
 			input: "Content-Type  \r\n  :\t\t text/html   ;\r\n charset=UTF-8\r\n\t",
-			expected: ParsedRequestHeaders{
-				ContentType: parsedContentType{
+			expected: RequestHeaders{
+				ContentType: ContentType{
 					Type:    "text",
 					Subtype: "html",
 					Parameters: map[string]string{
 						"charset": "UTF-8",
 					},
 				},
-				Raw: map[string]string{
+				raw: map[string]string{
 					"Content-Type": "text/html   ;\r\n charset=UTF-8\r\n\t",
 				},
 			},
@@ -100,9 +100,9 @@ func TestRequestHeaderParser_Parse(t *testing.T) {
 		{
 			name:  "Duplicate header fields",
 			input: "Content-Length:\t35\r\nContent-Length: 36",
-			expected: ParsedRequestHeaders{
+			expected: RequestHeaders{
 				ContentLength: uint64(36),
-				Raw: map[string]string{
+				raw: map[string]string{
 					"Content-Length": "36",
 				},
 			},
@@ -116,7 +116,7 @@ func TestRequestHeaderParser_Parse(t *testing.T) {
 		{
 			name:        "No headers",
 			input:       "",
-			expected:    ParsedRequestHeaders{},
+			expected:    RequestHeaders{},
 			expectError: false,
 		},
 	}
@@ -125,15 +125,8 @@ func TestRequestHeaderParser_Parse(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			res, err := requestHeadersParser(tt.input).Parse()
 
-			if err != nil {
-				if !tt.expectError {
-					t.Errorf("got unexpected error: %s (%v)", err.Error(), res)
-				}
-				return
-			}
-
-			if tt.expectError {
-				t.Errorf("did not get expected error! result: %v", res)
+			ok := assert.ErrorStatus(t, err, tt.expectError)
+			if !ok {
 				return
 			}
 
@@ -170,7 +163,7 @@ func TestRequestHeaderParser_Parse(t *testing.T) {
 			assert.DateEqual(t, res.Expires, tt.expected.Expires)
 			assert.DateEqual(t, res.LastModified, tt.expected.LastModified)
 			assert.MapEqual(t, res.Unrecognized, tt.expected.Unrecognized)
-			assert.MapEqual(t, res.Raw, tt.expected.Raw)
+			assert.MapEqual(t, res.raw, tt.expected.raw)
 		})
 	}
 }
@@ -264,17 +257,7 @@ func TestHeaderNameValidator_validate(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			err := headerNameValidator(tt.token).validate()
-
-			if err != nil {
-				if !tt.expectError {
-					t.Errorf("got unexpected error: %s", err.Error())
-				}
-				return
-			}
-
-			if tt.expectError {
-				t.Error("did not get expected error!")
-			}
+			assert.ErrorStatus(t, err, tt.expectError)
 		})
 	}
 }
@@ -325,17 +308,7 @@ func TestHeaderValueValidator_validate(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			err := headerValueValidator(tt.value).validate()
-
-			if err != nil {
-				if !tt.expectError {
-					t.Errorf("got unexpected error: %s", err.Error())
-				}
-				return
-			}
-
-			if tt.expectError {
-				t.Error("did not get expected error!")
-			}
+			assert.ErrorStatus(t, err, tt.expectError)
 		})
 	}
 }
@@ -344,43 +317,44 @@ func TestPragmaHeaderParser_parse(t *testing.T) {
 	tests := []struct {
 		name        string
 		pragmaVal   string
-		expected    parsedPragmaDirectives
+		expected    PragmaDirectives
 		expectError bool
 	}{
 		{
 			name:        "Standard case (no-cache)",
 			pragmaVal:   "no-cache",
-			expected:    parsedPragmaDirectives{Flags: []string{"no-cache"}},
+			expected:    PragmaDirectives{Flags: []string{"no-cache"}},
 			expectError: false,
 		},
 		{
 			name:        "Single extension (foo)",
 			pragmaVal:   "foo",
-			expected:    parsedPragmaDirectives{Flags: []string{"foo"}},
+			expected:    PragmaDirectives{Flags: []string{"foo"}},
 			expectError: false,
 		},
 		{
 			name:        "Single extension with value (foo=bar)",
 			pragmaVal:   "foo=bar",
-			expected:    parsedPragmaDirectives{Options: map[string]string{"foo": "bar"}},
+			expected:    PragmaDirectives{Options: map[string]string{"foo": "bar"}},
 			expectError: false,
 		},
 		{
 			name:        "Multiple directives (no-cache, foo=bar)",
 			pragmaVal:   "no-cache, foo=bar",
-			expected:    parsedPragmaDirectives{Flags: []string{"no-cache"}, Options: map[string]string{"foo": "bar"}},
+			expected:    PragmaDirectives{Flags: []string{"no-cache"}, Options: map[string]string{"foo": "bar"}},
 			expectError: false,
 		},
 		{
 			name:        "Extra whitespace (  no-cache \t,  \t foo=bar ,     flag)",
 			pragmaVal:   "  no-cache \t,  \t foo=bar ,     flag",
-			expected:    parsedPragmaDirectives{Flags: []string{"no-cache", "flag"}, Options: map[string]string{"foo": "bar"}},
+			expected:    PragmaDirectives{Flags: []string{"no-cache", "flag"}, Options: map[string]string{"foo": "bar"}},
 			expectError: false,
 		},
 		{
-			name:      "Multiple flags and options (no-cache, foo=bar, baz, this=works)",
-			pragmaVal: "no-cache, foo=bar, baz, this=works",
-			expected:  parsedPragmaDirectives{Flags: []string{"no-cache", "baz"}, Options: map[string]string{"foo": "bar", "this": "works"}},
+			name:        "Multiple flags and options (no-cache, foo=bar, baz, this=works)",
+			pragmaVal:   "no-cache, foo=bar, baz, this=works",
+			expected:    PragmaDirectives{Flags: []string{"no-cache", "baz"}, Options: map[string]string{"foo": "bar", "this": "works"}},
+			expectError: false,
 		},
 		{
 			name:        "No-cache with value (no-cache=1)",
@@ -408,15 +382,8 @@ func TestPragmaHeaderParser_parse(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			res, err := pragmaHeaderParser(tt.pragmaVal).parse()
 
-			if err != nil {
-				if !tt.expectError {
-					t.Errorf("got unexpected error: %s (%v)", err.Error(), res)
-				}
-				return
-			}
-
-			if tt.expectError {
-				t.Errorf("did not get expected error! result: %s", res)
+			ok := assert.ErrorStatus(t, err, tt.expectError)
+			if !ok {
 				return
 			}
 
@@ -470,13 +437,13 @@ func TestAuthorizationHeaderParser_parse(t *testing.T) {
 	tests := []struct {
 		name        string
 		value       string
-		expected    parsedAuthorizationCredentials
+		expected    AuthorizationCredentials
 		expectError bool
 	}{
 		{
 			name:  "Common header",
 			value: "Digest realm=\"example\"",
-			expected: parsedAuthorizationCredentials{
+			expected: AuthorizationCredentials{
 				Scheme:     "Digest",
 				Parameters: map[string]string{"realm": "example"},
 			},
@@ -485,7 +452,7 @@ func TestAuthorizationHeaderParser_parse(t *testing.T) {
 		{
 			name:  "Multiple params, common form",
 			value: "Digest realm=\"a\", nonce=\"b\"",
-			expected: parsedAuthorizationCredentials{
+			expected: AuthorizationCredentials{
 				Scheme: "Digest",
 				Parameters: map[string]string{
 					"realm": "a",
@@ -497,7 +464,7 @@ func TestAuthorizationHeaderParser_parse(t *testing.T) {
 		{
 			name:  "Extra LWS before params",
 			value: "Digest  \r\n\trealm=\"example\"",
-			expected: parsedAuthorizationCredentials{
+			expected: AuthorizationCredentials{
 				Scheme:     "Digest",
 				Parameters: map[string]string{"realm": "example"},
 			},
@@ -505,7 +472,7 @@ func TestAuthorizationHeaderParser_parse(t *testing.T) {
 		{
 			name:  "Extra LWS separating multiple parameters",
 			value: "Digest\r\n (\r\n\t\t \r\n realm=\"a\" ,\t\r\n\tnonce=\"b\"",
-			expected: parsedAuthorizationCredentials{
+			expected: AuthorizationCredentials{
 				Scheme: "Digest",
 				Parameters: map[string]string{
 					"realm": "a",
@@ -516,7 +483,7 @@ func TestAuthorizationHeaderParser_parse(t *testing.T) {
 		{
 			name:  "Basic authorization",
 			value: "Basic QWxhZGRpbjpvcGVuIHNlc2FtZQ==",
-			expected: parsedAuthorizationCredentials{
+			expected: AuthorizationCredentials{
 				Scheme: "Basic",
 				Parameters: map[string]string{
 					"userid":   "Aladdin",
@@ -530,15 +497,8 @@ func TestAuthorizationHeaderParser_parse(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			res, err := authorizationHeaderParser(tt.value).parse()
 
-			if err != nil {
-				if !tt.expectError {
-					t.Errorf("got unexpected error: %s (%v)", err.Error(), res)
-				}
-				return
-			}
-
-			if tt.expectError {
-				t.Errorf("did not get expected error! result: %s", res)
+			ok := assert.ErrorStatus(t, err, tt.expectError)
+			if !ok {
 				return
 			}
 
@@ -548,17 +508,17 @@ func TestAuthorizationHeaderParser_parse(t *testing.T) {
 	}
 }
 
-func TestParsedAuthorizationCredentials_setBasicSchemeParams(t *testing.T) {
+func TestAuthorizationCredentials_setBasicSchemeParams(t *testing.T) {
 	tests := []struct {
 		name        string
 		cookie      string
-		expected    parsedAuthorizationCredentials
+		expected    AuthorizationCredentials
 		expectError bool
 	}{
 		{
 			name:   "Empty userid",
 			cookie: "OnBhc3N3b3Jk",
-			expected: parsedAuthorizationCredentials{
+			expected: AuthorizationCredentials{
 				Scheme: "Basic",
 				Parameters: map[string]string{
 					"userid":   "",
@@ -569,7 +529,7 @@ func TestParsedAuthorizationCredentials_setBasicSchemeParams(t *testing.T) {
 		{
 			name:   "Empty password",
 			cookie: "QWxhZGRpbjo=",
-			expected: parsedAuthorizationCredentials{
+			expected: AuthorizationCredentials{
 				Scheme: "Basic",
 				Parameters: map[string]string{
 					"userid":   "Aladdin",
@@ -581,7 +541,7 @@ func TestParsedAuthorizationCredentials_setBasicSchemeParams(t *testing.T) {
 		{
 			name:   "Empty userid and password",
 			cookie: "Og==",
-			expected: parsedAuthorizationCredentials{
+			expected: AuthorizationCredentials{
 				Scheme: "Basic",
 				Parameters: map[string]string{
 					"userid":   "",
@@ -593,7 +553,7 @@ func TestParsedAuthorizationCredentials_setBasicSchemeParams(t *testing.T) {
 		{
 			name:   "More advanced userid",
 			cookie: "dXNlci0xMjM0OnBhc3M=",
-			expected: parsedAuthorizationCredentials{
+			expected: AuthorizationCredentials{
 				Scheme: "Basic",
 				Parameters: map[string]string{
 					"userid":   "user-1234",
@@ -615,7 +575,7 @@ func TestParsedAuthorizationCredentials_setBasicSchemeParams(t *testing.T) {
 		{
 			name:   "Multiple colons",
 			cookie: "dXNlcjpwYXNzOndpdGg6Y29sb25z",
-			expected: parsedAuthorizationCredentials{
+			expected: AuthorizationCredentials{
 				Scheme: "Basic",
 				Parameters: map[string]string{
 					"userid":   "user",
@@ -638,18 +598,12 @@ func TestParsedAuthorizationCredentials_setBasicSchemeParams(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			credentials := parsedAuthorizationCredentials{Scheme: "Basic"}
+			credentials := AuthorizationCredentials{Scheme: "Basic"}
 			err := credentials.setParams(tt.cookie)
 
-			if err != nil {
-				if !tt.expectError {
-					t.Errorf("got unexpected error: %s (%v)", err.Error(), credentials)
-				}
+			ok := assert.ErrorStatus(t, err, tt.expectError)
+			if !ok {
 				return
-			}
-
-			if tt.expectError {
-				t.Errorf("did not get expected error! result: %s", credentials)
 			}
 
 			assert.Equal(t, credentials.Scheme, tt.expected.Scheme)
@@ -658,17 +612,17 @@ func TestParsedAuthorizationCredentials_setBasicSchemeParams(t *testing.T) {
 	}
 }
 
-func TestParsedRequestHeaders_setFrom(t *testing.T) {
+func TestRequestHeaders_setFrom(t *testing.T) {
 	tests := []struct {
 		name        string
 		email       string
-		expected    ParsedRequestHeaders
+		expected    RequestHeaders
 		expectError bool
 	}{
 		{
 			name:  "Simple email address",
 			email: "user@example.com",
-			expected: ParsedRequestHeaders{
+			expected: RequestHeaders{
 				From: mail.Address{
 					Name:    "",
 					Address: "user@example.com",
@@ -679,7 +633,7 @@ func TestParsedRequestHeaders_setFrom(t *testing.T) {
 		{
 			name:  "Full email address",
 			email: "User <user@example.com>",
-			expected: ParsedRequestHeaders{
+			expected: RequestHeaders{
 				From: mail.Address{
 					Name:    "User",
 					Address: "user@example.com",
@@ -690,7 +644,7 @@ func TestParsedRequestHeaders_setFrom(t *testing.T) {
 		{
 			name:  "Quoted display name",
 			email: "\"User Name\" <user@example.com>",
-			expected: ParsedRequestHeaders{
+			expected: RequestHeaders{
 				From: mail.Address{
 					Name:    "User Name",
 					Address: "user@example.com",
@@ -701,7 +655,7 @@ func TestParsedRequestHeaders_setFrom(t *testing.T) {
 		{
 			name:  "Quoted display name with comma",
 			email: "\"Last, First\" <user@example.com>",
-			expected: ParsedRequestHeaders{
+			expected: RequestHeaders{
 				From: mail.Address{
 					Name:    "Last, First",
 					Address: "user@example.com",
@@ -712,7 +666,7 @@ func TestParsedRequestHeaders_setFrom(t *testing.T) {
 		{
 			name:  "Address with subdomain",
 			email: "user@mail.example.com",
-			expected: ParsedRequestHeaders{
+			expected: RequestHeaders{
 				From: mail.Address{
 					Name:    "",
 					Address: "user@mail.example.com",
@@ -723,7 +677,7 @@ func TestParsedRequestHeaders_setFrom(t *testing.T) {
 		{
 			name:  "Extra preceding whitespace",
 			email: " \t   User <user@example.com>",
-			expected: ParsedRequestHeaders{
+			expected: RequestHeaders{
 				From: mail.Address{
 					Name:    "User",
 					Address: "user@example.com",
@@ -760,18 +714,12 @@ func TestParsedRequestHeaders_setFrom(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			headers := ParsedRequestHeaders{}
+			headers := RequestHeaders{}
 			err := headers.setFrom(tt.email)
 
-			if err != nil {
-				if !tt.expectError {
-					t.Errorf("got unexpected error: %s (%v)", err.Error(), headers)
-				}
+			ok := assert.ErrorStatus(t, err, tt.expectError)
+			if !ok {
 				return
-			}
-
-			if tt.expectError {
-				t.Errorf("did not get expected error! result: %v", headers)
 			}
 
 			assert.Equal(t, headers.From.Name, tt.expected.From.Name)
@@ -847,15 +795,9 @@ func TestCommentExtractor_extract(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			c, next, err := commentExtractor(tt.tokens).extract(tt.index)
 
-			if err != nil {
-				if !tt.expectError {
-					t.Errorf("got unexpected error: %s (%v)", err.Error(), c)
-				}
+			ok := assert.ErrorStatus(t, err, tt.expectError)
+			if !ok {
 				return
-			}
-
-			if tt.expectError {
-				t.Errorf("did not get expected error! result: %s", c)
 			}
 
 			assert.Equal(t, c, tt.expectedComment)
@@ -864,7 +806,7 @@ func TestCommentExtractor_extract(t *testing.T) {
 	}
 }
 
-func TestProductTokenExtractor_extract(t *testing.T) {
+func TestProductVersionExtractor_extract(t *testing.T) {
 	tests := []struct {
 		name                 string
 		tokens               string
@@ -918,27 +860,87 @@ func TestProductTokenExtractor_extract(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			c, next := productTokenExtractor(tt.tokens).extract(tt.index)
+			c, next := productVersionExtractor(tt.tokens).extract(tt.index)
 			assert.Equal(t, c, tt.expectedProductToken)
 			assert.Equal(t, next, tt.expectedNext)
 		})
 	}
 }
 
-func TestParsedRequestHeaders_setUserAgent(t *testing.T) {
+func TestProductVersionParser_parse(t *testing.T) {
+	tests := []struct {
+		name         string
+		productToken string
+		expected     ProductVersion
+		expectError  bool
+	}{
+		{
+			name:         "Standard product token",
+			productToken: "Apache",
+			expected: ProductVersion{
+				Product: "Apache",
+				Version: "",
+			},
+			expectError: false,
+		},
+		{
+			name:         "More complex product token",
+			productToken: "libwww/2.17be",
+			expected: ProductVersion{
+				Product: "libwww",
+				Version: "2.17be",
+			},
+			expectError: false,
+		},
+		{
+			name:         "Product token with valid punctuation",
+			productToken: "lib_http-client/1.0.0-beta_2",
+			expected: ProductVersion{
+				Product: "lib_http-client",
+				Version: "1.0.0-beta_2",
+			},
+		},
+		{
+			name:         "Product token with multiple forward slashes",
+			productToken: "Apache/2.0/Test",
+			expectError:  true,
+		},
+		{
+			name:         "Product token containing invalid characters",
+			productToken: "go/te[@]st",
+			expectError:  true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			res, err := productVersionParser(tt.productToken).parse()
+
+			ok := assert.ErrorStatus(t, err, tt.expectError)
+			if !ok {
+				return
+			}
+
+			assert.Equal(t, res.Product, tt.expected.Product)
+			assert.Equal(t, res.Version, tt.expected.Version)
+		})
+	}
+}
+
+func TestRequestHeaders_setUserAgent(t *testing.T) {
 	tests := []struct {
 		name        string
 		string      string
-		expected    ParsedRequestHeaders
+		expected    RequestHeaders
 		expectError bool
 	}{
 		{
 			name:   "Classic example",
 			string: "Mozilla/5.0",
-			expected: ParsedRequestHeaders{
-				UserAgent: parsedUserAgent{
+			expected: RequestHeaders{
+				UserAgent: UserAgent{
 					Comments: []string{},
-					Products: []parsedProductToken{
+					Products: []ProductVersion{
 						{Product: "Mozilla", Version: "5.0"},
 					},
 				},
@@ -948,10 +950,10 @@ func TestParsedRequestHeaders_setUserAgent(t *testing.T) {
 		{
 			name:   "Multiple products",
 			string: "Mozilla/5.0 Gecko/20100101 Firefox/115.0",
-			expected: ParsedRequestHeaders{
-				UserAgent: parsedUserAgent{
+			expected: RequestHeaders{
+				UserAgent: UserAgent{
 					Comments: []string{},
-					Products: []parsedProductToken{
+					Products: []ProductVersion{
 						{Product: "Mozilla", Version: "5.0"},
 						{Product: "Gecko", Version: "20100101"},
 						{Product: "Firefox", Version: "115.0"},
@@ -963,12 +965,12 @@ func TestParsedRequestHeaders_setUserAgent(t *testing.T) {
 		{
 			name:   "Product followed by comment",
 			string: "curl/7.88.1 (x86_64-pc-linux-gnu)",
-			expected: ParsedRequestHeaders{
-				UserAgent: parsedUserAgent{
+			expected: RequestHeaders{
+				UserAgent: UserAgent{
 					Comments: []string{
 						"(x86_64-pc-linux-gnu)",
 					},
-					Products: []parsedProductToken{
+					Products: []ProductVersion{
 						{Product: "curl", Version: "7.88.1"},
 					},
 				},
@@ -978,12 +980,12 @@ func TestParsedRequestHeaders_setUserAgent(t *testing.T) {
 		{
 			name:   "Comment followed by product",
 			string: "(x11; linux x86_64) curl/8.1.0",
-			expected: ParsedRequestHeaders{
-				UserAgent: parsedUserAgent{
+			expected: RequestHeaders{
+				UserAgent: UserAgent{
 					Comments: []string{
 						"(x11; linux x86_64)",
 					},
-					Products: []parsedProductToken{
+					Products: []ProductVersion{
 						{Product: "curl", Version: "8.1.0"},
 					},
 				},
@@ -993,12 +995,12 @@ func TestParsedRequestHeaders_setUserAgent(t *testing.T) {
 		{
 			name:   "Interleaved product/comment/product",
 			string: "MyAgent/1.0 (compatible) EngineX/2.4",
-			expected: ParsedRequestHeaders{
-				UserAgent: parsedUserAgent{
+			expected: RequestHeaders{
+				UserAgent: UserAgent{
 					Comments: []string{
 						"(compatible)",
 					},
-					Products: []parsedProductToken{
+					Products: []ProductVersion{
 						{Product: "MyAgent", Version: "1.0"},
 						{Product: "EngineX", Version: "2.4"},
 					},
@@ -1009,14 +1011,14 @@ func TestParsedRequestHeaders_setUserAgent(t *testing.T) {
 		{
 			name:   "Multiple adjacent comments",
 			string: "Foo/1.2 (alpha)(beta)(rc1)",
-			expected: ParsedRequestHeaders{
-				UserAgent: parsedUserAgent{
+			expected: RequestHeaders{
+				UserAgent: UserAgent{
 					Comments: []string{
 						"(alpha)",
 						"(beta)",
 						"(rc1)",
 					},
-					Products: []parsedProductToken{
+					Products: []ProductVersion{
 						{Product: "Foo", Version: "1.2"},
 					},
 				},
@@ -1026,13 +1028,13 @@ func TestParsedRequestHeaders_setUserAgent(t *testing.T) {
 		{
 			name:   "No whitespace",
 			string: "A/1(B)(C)D/2",
-			expected: ParsedRequestHeaders{
-				UserAgent: parsedUserAgent{
+			expected: RequestHeaders{
+				UserAgent: UserAgent{
 					Comments: []string{
 						"(B)",
 						"(C)",
 					},
-					Products: []parsedProductToken{
+					Products: []ProductVersion{
 						{Product: "A", Version: "1"},
 						{Product: "D", Version: "2"},
 					},
@@ -1043,14 +1045,14 @@ func TestParsedRequestHeaders_setUserAgent(t *testing.T) {
 		{
 			name:   "Bizarre yet valid input",
 			string: "lib_http-client/1.0.0-beta_2\r\n  \t (build+20240201)\t(A)()   ",
-			expected: ParsedRequestHeaders{
-				UserAgent: parsedUserAgent{
+			expected: RequestHeaders{
+				UserAgent: UserAgent{
 					Comments: []string{
 						"(build+20240201)",
 						"(A)",
 						"()",
 					},
-					Products: []parsedProductToken{
+					Products: []ProductVersion{
 						{Product: "lib_http-client", Version: "1.0.0-beta_2"},
 					},
 				},
@@ -1080,14 +1082,14 @@ func TestParsedRequestHeaders_setUserAgent(t *testing.T) {
 		{
 			name:   "The Behemoth",
 			string: "A/1 (a(b(c(d(e))))) B/2 (x)(y(z))",
-			expected: ParsedRequestHeaders{
-				UserAgent: parsedUserAgent{
+			expected: RequestHeaders{
+				UserAgent: UserAgent{
 					Comments: []string{
 						"(a(b(c(d(e)))))",
 						"(x)",
 						"(y(z))",
 					},
-					Products: []parsedProductToken{
+					Products: []ProductVersion{
 						{Product: "A", Version: "1"},
 						{Product: "B", Version: "2"},
 					},
@@ -1099,18 +1101,12 @@ func TestParsedRequestHeaders_setUserAgent(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			headers := ParsedRequestHeaders{}
+			headers := RequestHeaders{}
 			err := headers.setUserAgent(tt.string)
 
-			if err != nil {
-				if !tt.expectError {
-					t.Errorf("got unexpected error: %s (%v)", err.Error(), headers)
-				}
+			ok := assert.ErrorStatus(t, err, tt.expectError)
+			if !ok {
 				return
-			}
-
-			if tt.expectError {
-				t.Errorf("did not get expected error! result: %v", headers)
 			}
 
 			assert.SliceEqual(t, headers.UserAgent.Comments, tt.expected.UserAgent.Comments)
@@ -1130,42 +1126,42 @@ func TestParsedRequestHeaders_setUserAgent(t *testing.T) {
 	}
 }
 
-func TestParsedRequestHeaders_setAllow(t *testing.T) {
+func TestRequestHeaders_setAllow(t *testing.T) {
 	tests := []struct {
 		name        string
 		string      string
-		expected    ParsedRequestHeaders
+		expected    RequestHeaders
 		expectError bool
 	}{
 		{
 			name:   "Single method",
 			string: "GET",
-			expected: ParsedRequestHeaders{
-				Allow: []string{"GET"},
+			expected: RequestHeaders{
+				Allow: []Method{"GET"},
 			},
 			expectError: false,
 		},
 		{
 			name:   "Multiple methods, common form",
 			string: "GET, POST, HEAD",
-			expected: ParsedRequestHeaders{
-				Allow: []string{"GET", "POST", "HEAD"},
+			expected: RequestHeaders{
+				Allow: []Method{"GET", "POST", "HEAD"},
 			},
 			expectError: false,
 		},
 		{
 			name:   "No whitespace",
 			string: "GET,POST,PUT,HEAD",
-			expected: ParsedRequestHeaders{
-				Allow: []string{"GET", "POST", "PUT", "HEAD"},
+			expected: RequestHeaders{
+				Allow: []Method{"GET", "POST", "PUT", "HEAD"},
 			},
 			expectError: false,
 		},
 		{
 			name:   "Mixed LWS",
 			string: "get ,\r\n\tPost,HeAd",
-			expected: ParsedRequestHeaders{
-				Allow: []string{"get", "Post", "HeAd"},
+			expected: RequestHeaders{
+				Allow: []Method{"get", "Post", "HeAd"},
 			},
 			expectError: false,
 		},
@@ -1183,18 +1179,12 @@ func TestParsedRequestHeaders_setAllow(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			headers := ParsedRequestHeaders{}
+			headers := RequestHeaders{}
+
 			err := headers.setAllow(tt.string)
-
-			if err != nil {
-				if !tt.expectError {
-					t.Errorf("got unexpected error: %s (%v)", err.Error(), headers)
-				}
+			ok := assert.ErrorStatus(t, err, tt.expectError)
+			if !ok {
 				return
-			}
-
-			if tt.expectError {
-				t.Errorf("did not get expected error! result: %v", headers)
 			}
 
 			assert.SliceEqual(t, headers.Allow, tt.expected.Allow)
@@ -1202,17 +1192,17 @@ func TestParsedRequestHeaders_setAllow(t *testing.T) {
 	}
 }
 
-func TestParsedRequestHeaders_setContentEncoding(t *testing.T) {
+func TestRequestHeaders_setContentEncoding(t *testing.T) {
 	tests := []struct {
 		name        string
 		string      string
-		expected    ParsedRequestHeaders
+		expected    RequestHeaders
 		expectError bool
 	}{
 		{
 			name:   "Canonical value",
 			string: "x-gzip",
-			expected: ParsedRequestHeaders{
+			expected: RequestHeaders{
 				ContentEncoding: "x-gzip",
 			},
 			expectError: false,
@@ -1220,7 +1210,7 @@ func TestParsedRequestHeaders_setContentEncoding(t *testing.T) {
 		{
 			name:   "Non-standard casing of x-gzip",
 			string: "X-gZIp",
-			expected: ParsedRequestHeaders{
+			expected: RequestHeaders{
 				ContentEncoding: "x-gzip",
 			},
 			expectError: false,
@@ -1228,7 +1218,7 @@ func TestParsedRequestHeaders_setContentEncoding(t *testing.T) {
 		{
 			name:   "Non-standard casing of x-compress",
 			string: "x-CoMprEss",
-			expected: ParsedRequestHeaders{
+			expected: RequestHeaders{
 				ContentEncoding: "x-compress",
 			},
 			expectError: false,
@@ -1236,7 +1226,7 @@ func TestParsedRequestHeaders_setContentEncoding(t *testing.T) {
 		{
 			name:   "Non-standard token",
 			string: "compress2",
-			expected: ParsedRequestHeaders{
+			expected: RequestHeaders{
 				ContentEncoding: "compress2",
 			},
 			expectError: false,
@@ -1250,18 +1240,12 @@ func TestParsedRequestHeaders_setContentEncoding(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			headers := ParsedRequestHeaders{}
+			headers := RequestHeaders{}
+
 			err := headers.setContentEncoding(tt.string)
-
-			if err != nil {
-				if !tt.expectError {
-					t.Errorf("got unexpected error: %s (%v)", err.Error(), headers)
-				}
+			ok := assert.ErrorStatus(t, err, tt.expectError)
+			if !ok {
 				return
-			}
-
-			if tt.expectError {
-				t.Errorf("did not get expected error! result: %v", headers)
 			}
 
 			assert.Equal(t, headers.ContentEncoding, tt.expected.ContentEncoding)
@@ -1269,17 +1253,17 @@ func TestParsedRequestHeaders_setContentEncoding(t *testing.T) {
 	}
 }
 
-func TestParsedRequestHeaders_setContentLength(t *testing.T) {
+func TestRequestHeaders_setContentLength(t *testing.T) {
 	tests := []struct {
 		name        string
 		string      string
-		expected    ParsedRequestHeaders
+		expected    RequestHeaders
 		expectError bool
 	}{
 		{
 			name:   "Zero length",
 			string: "0",
-			expected: ParsedRequestHeaders{
+			expected: RequestHeaders{
 				ContentLength: 0,
 			},
 			expectError: false,
@@ -1287,7 +1271,7 @@ func TestParsedRequestHeaders_setContentLength(t *testing.T) {
 		{
 			name:   "Small positive integer",
 			string: "256",
-			expected: ParsedRequestHeaders{
+			expected: RequestHeaders{
 				ContentLength: 256,
 			},
 			expectError: false,
@@ -1295,7 +1279,7 @@ func TestParsedRequestHeaders_setContentLength(t *testing.T) {
 		{
 			name:   "Leading zeros",
 			string: "00042",
-			expected: ParsedRequestHeaders{
+			expected: RequestHeaders{
 				ContentLength: 42,
 			},
 			expectError: false,
@@ -1303,7 +1287,7 @@ func TestParsedRequestHeaders_setContentLength(t *testing.T) {
 		{
 			name:   "Maximum uint64",
 			string: "18446744073709551615",
-			expected: ParsedRequestHeaders{
+			expected: RequestHeaders{
 				ContentLength: 18446744073709551615,
 			},
 			expectError: false,
@@ -1327,18 +1311,12 @@ func TestParsedRequestHeaders_setContentLength(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			headers := ParsedRequestHeaders{}
+			headers := RequestHeaders{}
+
 			err := headers.setContentLength(tt.string)
-
-			if err != nil {
-				if !tt.expectError {
-					t.Errorf("got unexpected error: %s (%v)", err.Error(), headers)
-				}
+			ok := assert.ErrorStatus(t, err, tt.expectError)
+			if !ok {
 				return
-			}
-
-			if tt.expectError {
-				t.Errorf("did not get expected error! result: %v", headers)
 			}
 
 			assert.Equal(t, headers.ContentLength, tt.expected.ContentLength)
@@ -1346,19 +1324,19 @@ func TestParsedRequestHeaders_setContentLength(t *testing.T) {
 	}
 }
 
-func TestParsedRequestHeaders_setUnrecognized(t *testing.T) {
+func TestRequestHeaders_setUnrecognized(t *testing.T) {
 	tests := []struct {
 		name        string
 		key         string
 		value       string
-		expected    ParsedRequestHeaders
+		expected    RequestHeaders
 		expectError bool
 	}{
 		{
 			name:  "Standard Example",
 			key:   "Foo",
 			value: "Bar Baz",
-			expected: ParsedRequestHeaders{
+			expected: RequestHeaders{
 				Unrecognized: map[string]string{
 					"Foo": "Bar Baz",
 				},
@@ -1369,7 +1347,7 @@ func TestParsedRequestHeaders_setUnrecognized(t *testing.T) {
 			name:  "Empty value",
 			key:   "X-Empty",
 			value: "",
-			expected: ParsedRequestHeaders{
+			expected: RequestHeaders{
 				Unrecognized: map[string]string{
 					"X-Empty": "",
 				},
@@ -1380,7 +1358,7 @@ func TestParsedRequestHeaders_setUnrecognized(t *testing.T) {
 			name:  "Value with tspecials and spaces",
 			key:   "X-Weird",
 			value: "foo/bar;baz=qux\r\n \ttest",
-			expected: ParsedRequestHeaders{
+			expected: RequestHeaders{
 				Unrecognized: map[string]string{
 					"X-Weird": "foo/bar;baz=qux\r\n \ttest",
 				},
@@ -1397,18 +1375,12 @@ func TestParsedRequestHeaders_setUnrecognized(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			headers := ParsedRequestHeaders{}
+			headers := RequestHeaders{}
+
 			err := headers.setUnrecognized(tt.key, tt.value)
-
-			if err != nil {
-				if !tt.expectError {
-					t.Errorf("got unexpected error: %s (%v)", err.Error(), headers)
-				}
+			ok := assert.ErrorStatus(t, err, tt.expectError)
+			if !ok {
 				return
-			}
-
-			if tt.expectError {
-				t.Errorf("did not get expected error! result: %v", headers)
 			}
 
 			assert.MapEqual(t, headers.Unrecognized, tt.expected.Unrecognized)
@@ -1506,6 +1478,11 @@ func TestContentTypeParametersParser_parse(t *testing.T) {
 			expectError: true,
 		},
 		{
+			name:        "Empty string",
+			parameters:  "",
+			expectError: true,
+		},
+		{
 			name:        "Unterminated quoted-string",
 			parameters:  "boundary=\"abc",
 			expectError: true,
@@ -1526,15 +1503,9 @@ func TestContentTypeParametersParser_parse(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			res, err := contentTypeParametersParser(tt.parameters).parse()
 
-			if err != nil {
-				if !tt.expectError {
-					t.Errorf("got unexpected error: %s", err.Error())
-				}
+			ok := assert.ErrorStatus(t, err, tt.expectError)
+			if !ok {
 				return
-			}
-
-			if tt.expectError {
-				t.Errorf("did not get expected error! result: %v", res)
 			}
 
 			assert.MapEqual(t, res, tt.expected)
@@ -1542,17 +1513,17 @@ func TestContentTypeParametersParser_parse(t *testing.T) {
 	}
 }
 
-func ContentTypeParser_parse(t *testing.T) {
+func TestContentTypeParser_parse(t *testing.T) {
 	tests := []struct {
 		name        string
 		contentType string
-		expected    parsedContentType
+		expected    ContentType
 		expectError bool
 	}{
 		{
 			name:        "Simple type/subtype",
 			contentType: "text/plain",
-			expected: parsedContentType{
+			expected: ContentType{
 				Type:    "text",
 				Subtype: "plain",
 			},
@@ -1561,7 +1532,7 @@ func ContentTypeParser_parse(t *testing.T) {
 		{
 			name:        "Type/subtype with charset",
 			contentType: "text/html; charset=utf-8",
-			expected: parsedContentType{
+			expected: ContentType{
 				Type:    "text",
 				Subtype: "html",
 				Parameters: map[string]string{
@@ -1573,7 +1544,7 @@ func ContentTypeParser_parse(t *testing.T) {
 		{
 			name:        "Multiple parameters",
 			contentType: "multipart/form-data; boundary=abc123; charset=utf-8",
-			expected: parsedContentType{
+			expected: ContentType{
 				Type:    "multipart",
 				Subtype: "form-data",
 				Parameters: map[string]string{
@@ -1586,7 +1557,7 @@ func ContentTypeParser_parse(t *testing.T) {
 		{
 			name:        "Extra whitespace",
 			contentType: " \t application/json \r\n\t ;  charset=utf-8",
-			expected: parsedContentType{
+			expected: ContentType{
 				Type:    "application",
 				Subtype: "json",
 				Parameters: map[string]string{
@@ -1598,7 +1569,7 @@ func ContentTypeParser_parse(t *testing.T) {
 		{
 			name:        "Complex subtype",
 			contentType: "application/vnd.mycompany.mytype+json",
-			expected: parsedContentType{
+			expected: ContentType{
 				Type:    "application",
 				Subtype: "vnd.mycompany.mytype+json",
 			},
@@ -1622,7 +1593,7 @@ func ContentTypeParser_parse(t *testing.T) {
 		{
 			name:        "No whitespace",
 			contentType: "application/xml;charset=\"utf-8\";version=1.0",
-			expected: parsedContentType{
+			expected: ContentType{
 				Type:    "application",
 				Subtype: "xml",
 				Parameters: map[string]string{
@@ -1638,15 +1609,9 @@ func ContentTypeParser_parse(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			res, err := contentTypeParser(tt.contentType).parse()
 
-			if err != nil {
-				if !tt.expectError {
-					t.Errorf("got unexpected error: %s (%v)", err.Error(), res)
-				}
+			ok := assert.ErrorStatus(t, err, tt.expectError)
+			if !ok {
 				return
-			}
-
-			if tt.expectError {
-				t.Errorf("did not get expected error! result: %v", res)
 			}
 
 			assert.Equal(t, res.Type, tt.expected.Type)

@@ -1,4 +1,4 @@
-package parser
+package message
 
 import (
 	"bytes"
@@ -8,6 +8,59 @@ import (
 
 	"github.com/tony-montemuro/http/internal/assert"
 )
+
+func TestRequestBodyParser_parse(t *testing.T) {
+	tests := []struct {
+		name        string
+		headers     RequestHeaders
+		body        requestBodyParser
+		expected    []byte
+		expectError bool
+	}{
+		{
+			name: "Hello world",
+			headers: RequestHeaders{
+				ContentEncoding: "",
+				ContentLength:   13,
+			},
+			body:        requestBodyParser([]byte("Hello, world!")),
+			expected:    []byte("Hello, world!"),
+			expectError: false,
+		},
+		{
+			name: "Empty body",
+			headers: RequestHeaders{
+				ContentEncoding: "",
+				ContentLength:   0,
+			},
+			body:        requestBodyParser([]byte("")),
+			expected:    []byte(""),
+			expectError: false,
+		},
+		{
+			name: "Content-Length exceeds body length",
+			headers: RequestHeaders{
+				ContentEncoding: "",
+				ContentLength:   10,
+			},
+			body:        requestBodyParser([]byte("abc")),
+			expectError: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			res, err := tt.body.parse(tt.headers)
+
+			ok := assert.ErrorStatus(t, err, tt.expectError)
+			if !ok {
+				return
+			}
+
+			assert.SliceEqual(t, res, tt.expected)
+		})
+	}
+}
 
 func TestGzipDecode(t *testing.T) {
 	tests := []struct {
@@ -122,65 +175,6 @@ func TestCompressDecoder(t *testing.T) {
 			if err != nil {
 				t.Errorf("got unexpected error: %s", err.Error())
 				return
-			}
-
-			assert.SliceEqual(t, res, tt.expected)
-		})
-	}
-}
-
-func TestRequestBodyParser_parse(t *testing.T) {
-	tests := []struct {
-		name        string
-		headers     ParsedRequestHeaders
-		body        requestBodyParser
-		expected    []byte
-		expectError bool
-	}{
-		{
-			name: "Hello world",
-			headers: ParsedRequestHeaders{
-				ContentEncoding: "",
-				ContentLength:   13,
-			},
-			body:        requestBodyParser([]byte("Hello, world!")),
-			expected:    []byte("Hello, world!"),
-			expectError: false,
-		},
-		{
-			name: "Empty body",
-			headers: ParsedRequestHeaders{
-				ContentEncoding: "",
-				ContentLength:   0,
-			},
-			body:        requestBodyParser([]byte("")),
-			expected:    []byte(""),
-			expectError: false,
-		},
-		{
-			name: "Content-Length exceeds body length",
-			headers: ParsedRequestHeaders{
-				ContentEncoding: "",
-				ContentLength:   10,
-			},
-			body:        requestBodyParser([]byte("abc")),
-			expectError: true,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			res, err := tt.body.Parse(tt.headers)
-
-			if err != nil {
-				if !tt.expectError {
-					t.Errorf("got unexpected error: %s", err.Error())
-				}
-				return
-			}
-
-			if tt.expectError {
-				t.Errorf("did not get expected error! (%v)", res)
 			}
 
 			assert.SliceEqual(t, res, tt.expected)

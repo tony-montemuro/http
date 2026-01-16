@@ -1,9 +1,10 @@
-package parser
+package message
 
 import "fmt"
 
 type ClientError struct {
 	message string
+	status  int
 }
 
 func (e ClientError) Error() string {
@@ -12,6 +13,7 @@ func (e ClientError) Error() string {
 
 type ServerError struct {
 	message string
+	status  int
 }
 
 func (e ServerError) Error() string {

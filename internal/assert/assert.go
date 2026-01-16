@@ -65,3 +65,21 @@ func DateEqual(t *testing.T, actual, expected time.Time) {
 		t.Errorf("got: %v, want: %v", actual, expected)
 	}
 }
+
+func ErrorStatus(t *testing.T, err error, expectError bool) bool {
+	t.Helper()
+
+	if err != nil {
+		if !expectError {
+			t.Errorf("got unexpected error: %s", err.Error())
+		}
+		return false
+	}
+
+	if expectError {
+		t.Error("did not get expected error")
+		return false
+	}
+
+	return true
+}
