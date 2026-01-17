@@ -25,12 +25,14 @@ type ContentEncoding string
 
 const (
 	ContentEncodingXGzip     = "x-gzip"
+	ContentEncodingGZip      = "gzip"
 	ContentEncodingXCompress = "x-compress"
+	ContentEncodingCompress  = "compress"
 )
 
 func (e ContentEncoding) Validate() error {
 	switch e {
-	case ContentEncodingXGzip, ContentEncodingXCompress:
+	case ContentEncodingXGzip, ContentEncodingGZip, ContentEncodingXCompress, ContentEncodingCompress:
 		return nil
 	}
 	return fmt.Errorf("unknown encoding")

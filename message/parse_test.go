@@ -1372,6 +1372,22 @@ func TestRequestHeaders_setContentEncoding(t *testing.T) {
 			expectError: false,
 		},
 		{
+			name:   "Non-standard casing of gzip",
+			string: "gZIp",
+			expected: RequestHeaders{
+				ContentEncoding: "gzip",
+			},
+			expectError: false,
+		},
+		{
+			name:   "Non-standard casing of compress",
+			string: "compress",
+			expected: RequestHeaders{
+				ContentEncoding: "compress",
+			},
+			expectError: false,
+		},
+		{
 			name:   "Non-standard token",
 			string: "compress2",
 			expected: RequestHeaders{
@@ -1770,6 +1786,17 @@ func TestContentTypeParser_parse(t *testing.T) {
 }
 
 func TestRequestBodyParser_parse(t *testing.T) {
+	gzip, err := base64.StdEncoding.DecodeString("H4sIAAAAAAAAA/JIzcnJ11EIzy/KSVEEAAAA//8DANDDSuwNAAAA")
+	if err != nil {
+		t.Fatalf("Test could not complete! (%s)", err.Error())
+	}
+
+	var buf bytes.Buffer
+	w := lzw.NewWriter(&buf, lzw.MSB, 8)
+	w.Write([]byte("Hello, World!"))
+	w.Close()
+	compress := buf.Bytes()
+
 	tests := []struct {
 		name        string
 		headers     RequestHeaders
@@ -1805,6 +1832,46 @@ func TestRequestBodyParser_parse(t *testing.T) {
 			},
 			body:        requestBodyParser([]byte("abc")),
 			expectError: true,
+		},
+		{
+			name: "x-gzip Hello World",
+			headers: RequestHeaders{
+				ContentEncoding: "x-gzip",
+				ContentLength:   ContentLength(len(gzip)),
+			},
+			body:        requestBodyParser(gzip),
+			expected:    []byte("Hello, World!"),
+			expectError: false,
+		},
+		{
+			name: "gzip Hello World",
+			headers: RequestHeaders{
+				ContentEncoding: "gzip",
+				ContentLength:   ContentLength(len(gzip)),
+			},
+			body:        requestBodyParser(gzip),
+			expected:    []byte("Hello, World!"),
+			expectError: false,
+		},
+		{
+			name: "x-compress Hello World",
+			headers: RequestHeaders{
+				ContentEncoding: "x-compress",
+				ContentLength:   ContentLength(len(compress)),
+			},
+			body:        requestBodyParser(compress),
+			expected:    []byte("Hello, World!"),
+			expectError: false,
+		},
+		{
+			name: "compress Hello World",
+			headers: RequestHeaders{
+				ContentEncoding: "compress",
+				ContentLength:   ContentLength(len(compress)),
+			},
+			body:        requestBodyParser(compress),
+			expected:    []byte("Hello, World!"),
+			expectError: false,
 		},
 	}
 

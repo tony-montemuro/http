@@ -740,20 +740,21 @@ func (rb requestBodyParser) parse(rh RequestHeaders) ([]byte, error) {
 		body = append(body, rb[i])
 	}
 
-	return requestBodyDecoder(body).decode()
+	return requestBodyDecoder(body).decode(rh.ContentEncoding)
 }
 
 type requestBodyDecoder []byte
 
-func (d requestBodyDecoder) decode() ([]byte, error) {
+func (d requestBodyDecoder) decode(encoding ContentEncoding) ([]byte, error) {
 	var res []byte
 	var err error
+	fmt.Println()
 	reader := bytes.NewReader([]byte(d))
 
-	switch ContentEncoding(d) {
-	case ContentEncodingXGzip:
+	switch encoding {
+	case ContentEncodingXGzip, ContentEncodingGZip:
 		res, err = gzipDecode(reader)
-	case ContentEncodingXCompress:
+	case ContentEncodingXCompress, ContentEncodingCompress:
 		res, err = compressDecode(reader)
 	default:
 		res, err = io.ReadAll(reader)
@@ -769,7 +770,7 @@ func (d requestBodyDecoder) decode() ([]byte, error) {
 func gzipDecode(r io.Reader) ([]byte, error) {
 	reader, err := gzip.NewReader(r)
 	if err != nil {
-		return nil, fmt.Errorf("unexpected issue decoding body (%w)", err)
+		return nil, err
 	}
 	defer reader.Close()
 
