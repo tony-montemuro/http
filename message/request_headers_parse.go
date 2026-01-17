@@ -156,7 +156,7 @@ func (rh *RequestHeaders) setDate(data string) error {
 		return fmt.Errorf("Invalid date header: %s", err.Error())
 	}
 
-	rh.Date = date
+	rh.Date = MessageTime{date}
 	return nil
 }
 
@@ -341,7 +341,7 @@ func (rh *RequestHeaders) setIfModifiedSince(data string) error {
 		return fmt.Errorf("Invalid If-Modified-Since header: %s", err.Error())
 	}
 
-	rh.IfModifiedSince = date
+	rh.IfModifiedSince = MessageTime{date}
 	return nil
 }
 
@@ -506,7 +506,7 @@ func (rh *RequestHeaders) setContentLength(data string) error {
 		return fmt.Errorf("Invalid Content-Length header: must be a valid unsigned 64-bit integer (%s)", data)
 	}
 
-	rh.ContentLength = n
+	rh.ContentLength = ContentLength(n)
 	return nil
 }
 
@@ -635,7 +635,7 @@ func (rh *RequestHeaders) setExpires(data string) error {
 		return fmt.Errorf("Invalid Expires header: %s", err.Error())
 	}
 
-	rh.Date = expires
+	rh.Date = MessageTime{expires}
 	return nil
 
 }
@@ -646,7 +646,7 @@ func (rh *RequestHeaders) setLastModified(data string) error {
 		return fmt.Errorf("Invalid Last-Modified header: %s", err.Error())
 	}
 
-	rh.LastModified = lastModified
+	rh.LastModified = MessageTime{lastModified}
 	return nil
 }
 

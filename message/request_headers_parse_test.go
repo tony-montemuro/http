@@ -36,7 +36,7 @@ func TestRequestHeaderParser_Parse(t *testing.T) {
 						{Product: "Client", Version: "1.0"},
 					},
 				},
-				Date: time.Date(1994, 11, 6, 8, 49, 37, 0, time.FixedZone("GMT", 0)),
+				Date: MessageTime{time.Date(1994, 11, 6, 8, 49, 37, 0, time.FixedZone("GMT", 0))},
 				raw: map[string]string{
 					"Allow":      "GET",
 					"User-Agent": "Client/1.0",
@@ -101,7 +101,7 @@ func TestRequestHeaderParser_Parse(t *testing.T) {
 			name:  "Duplicate header fields",
 			input: "Content-Length:\t35\r\nContent-Length: 36",
 			expected: RequestHeaders{
-				ContentLength: uint64(36),
+				ContentLength: ContentLength(36),
 				raw: map[string]string{
 					"Content-Length": "36",
 				},
@@ -130,14 +130,14 @@ func TestRequestHeaderParser_Parse(t *testing.T) {
 				return
 			}
 
-			assert.DateEqual(t, res.Date, tt.expected.Date)
+			assert.DateEqual(t, res.Date.date, tt.expected.Date.date)
 			assert.SliceEqual(t, res.Pragma.Flags, tt.expected.Pragma.Flags)
 			assert.MapEqual(t, res.Pragma.Options, tt.expected.Pragma.Options)
 			assert.Equal(t, res.Authorization.Scheme, tt.expected.Authorization.Scheme)
 			assert.MapEqual(t, res.Authorization.Parameters, tt.expected.Authorization.Parameters)
 			assert.Equal(t, res.From.Name, tt.expected.From.Name)
 			assert.Equal(t, res.From.Address, tt.expected.From.Address)
-			assert.DateEqual(t, res.IfModifiedSince, tt.expected.IfModifiedSince)
+			assert.DateEqual(t, res.IfModifiedSince.date, tt.expected.IfModifiedSince.date)
 			assert.Equal(t, res.Referer, tt.expected.Referer)
 
 			assert.SliceEqual(t, res.UserAgent.Comments, tt.expected.UserAgent.Comments)
@@ -160,8 +160,8 @@ func TestRequestHeaderParser_Parse(t *testing.T) {
 			assert.Equal(t, res.ContentType.Type, tt.expected.ContentType.Type)
 			assert.Equal(t, res.ContentType.Subtype, tt.expected.ContentType.Subtype)
 			assert.MapEqual(t, res.ContentType.Parameters, tt.expected.ContentType.Parameters)
-			assert.DateEqual(t, res.Expires, tt.expected.Expires)
-			assert.DateEqual(t, res.LastModified, tt.expected.LastModified)
+			assert.DateEqual(t, res.Expires.date, tt.expected.Expires.date)
+			assert.DateEqual(t, res.LastModified.date, tt.expected.LastModified.date)
 			assert.MapEqual(t, res.Unrecognized, tt.expected.Unrecognized)
 			assert.MapEqual(t, res.raw, tt.expected.raw)
 		})

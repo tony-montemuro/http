@@ -12,42 +12,6 @@ import (
 	"github.com/tony-montemuro/http/internal/constructs"
 )
 
-type Method string
-
-const (
-	MethodGet  Method = "GET"
-	MethodHead Method = "HEAD"
-	MethodPost Method = "POST"
-)
-
-func (m Method) Validate() error {
-	switch m {
-	case MethodGet, MethodHead, MethodPost:
-		return nil
-	}
-	return fmt.Errorf("invalid method")
-}
-
-type ContentEncoding string
-
-const (
-	ContentEncodingXGzip     = "x-gzip"
-	ContentEncodingXCompress = "x-compress"
-)
-
-func (e ContentEncoding) Validate() error {
-	switch e {
-	case ContentEncodingXGzip, ContentEncodingXCompress:
-		return nil
-	}
-	return fmt.Errorf("unknown encoding")
-}
-
-type PragmaDirectives struct {
-	Flags   []string
-	Options map[string]string
-}
-
 type AuthorizationCredentials struct {
 	Scheme     string
 	Parameters map[string]string
@@ -63,12 +27,6 @@ type UserAgent struct {
 	Products []ProductVersion
 }
 
-type ContentType struct {
-	Type       string
-	Subtype    string
-	Parameters map[string]string
-}
-
 type RequestLine struct {
 	Method  Method
 	Uri     AbsPathUri
@@ -76,19 +34,19 @@ type RequestLine struct {
 }
 
 type RequestHeaders struct {
-	Date            time.Time
+	Date            MessageTime
 	Pragma          PragmaDirectives
 	Authorization   AuthorizationCredentials
 	From            mail.Address
-	IfModifiedSince time.Time
+	IfModifiedSince MessageTime
 	Referer         string
 	UserAgent       UserAgent
 	Allow           []Method
 	ContentEncoding ContentEncoding
-	ContentLength   uint64
+	ContentLength   ContentLength
 	ContentType     ContentType
-	Expires         time.Time
-	LastModified    time.Time
+	Expires         MessageTime
+	LastModified    MessageTime
 	Unrecognized    map[string]string
 	raw             map[string]string
 }

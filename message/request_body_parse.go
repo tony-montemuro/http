@@ -14,7 +14,7 @@ func (rb requestBodyParser) parse(rh RequestHeaders) ([]byte, error) {
 	var body []byte
 	length := rh.ContentLength
 
-	if length > uint64(len(rb)) {
+	if length > ContentLength(len(rb)) {
 		return body, ClientError{message: "Content-Length header exceeds body length"}
 	}
 
