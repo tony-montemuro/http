@@ -2,8 +2,11 @@ package message
 
 import (
 	"bytes"
+	"compress/gzip"
+	"compress/lzw"
 	"encoding/base64"
 	"fmt"
+	"io"
 	"net/mail"
 	"strconv"
 	"strings"
@@ -12,6 +15,66 @@ import (
 	"github.com/tony-montemuro/http/internal/lws"
 	"github.com/tony-montemuro/http/internal/rules"
 )
+
+type requestLineParser []byte
+
+func (rl requestLineParser) parse() (RequestLine, error) {
+	parts := bytes.Split(rl, []byte(" "))
+	if len(parts) != 3 {
+		return RequestLine{}, ClientError{message: fmt.Sprintf("Invalid request line: malformed request line (%s)", string(rl))}
+	}
+
+	m := Method(parts[0])
+	err := m.Validate()
+	if err != nil {
+		return RequestLine{}, ClientError{message: fmt.Sprintf("Invalid request line: issue with request method (%s)", err.Error())}
+	}
+
+	uri, err := absPathUriParser(parts[1]).parse()
+	if err != nil {
+		return RequestLine{}, err
+	}
+
+	version, err := versionParser(parts[2]).parse()
+	if err != nil {
+		return RequestLine{}, ClientError{message: fmt.Sprintf("Invalid request line: issue with version (%s)", version)}
+	}
+
+	return RequestLine{Method: m, Uri: uri, Version: version}, nil
+}
+
+type versionParser string
+
+func (v versionParser) parse() (string, error) {
+	if len(v) < 8 {
+		return string(v), fmt.Errorf("incomplete version (%s)", v)
+	}
+
+	data := strings.Split(string(v), string(constructs.ByteSeparator))
+	if len(data) != 2 || !strings.Contains(data[1], ".") {
+		return string(v), fmt.Errorf("could not determine version number (%s)", v)
+	}
+
+	if data[0] != "HTTP" {
+		return string(v), fmt.Errorf("wrong protocol (%s)", data[0])
+	}
+
+	digits := strings.Split(data[1], ".")
+	if len(digits) != 2 {
+		return string(v), fmt.Errorf("malformed version number (%s)", data[1])
+	}
+
+	d1, err1 := strconv.Atoi(string(digits[0]))
+	_, err2 := strconv.Atoi(string(digits[1]))
+	if err1 != nil || err2 != nil {
+		return string(v), fmt.Errorf("contains invalid characters (%s)", v)
+	}
+	if d1 == 0 {
+		return string(v), fmt.Errorf("must be at least 1.0 (%s)", v)
+	}
+
+	return data[1], nil
+}
 
 type requestHeadersParser []byte
 
@@ -661,4 +724,62 @@ func (rh *RequestHeaders) setUnrecognized(name, data string) error {
 	}
 	rh.Unrecognized[name] = data
 	return nil
+}
+
+type requestBodyParser []byte
+
+func (rb requestBodyParser) parse(rh RequestHeaders) ([]byte, error) {
+	var body []byte
+	length := rh.ContentLength
+
+	if length > ContentLength(len(rb)) {
+		return body, ClientError{message: "Content-Length header exceeds body length"}
+	}
+
+	for i := range length {
+		body = append(body, rb[i])
+	}
+
+	return requestBodyDecoder(body).decode()
+}
+
+type requestBodyDecoder []byte
+
+func (d requestBodyDecoder) decode() ([]byte, error) {
+	var res []byte
+	var err error
+	reader := bytes.NewReader([]byte(d))
+
+	switch ContentEncoding(d) {
+	case ContentEncodingXGzip:
+		res, err = gzipDecode(reader)
+	case ContentEncodingXCompress:
+		res, err = compressDecode(reader)
+	default:
+		res, err = io.ReadAll(reader)
+	}
+
+	if err != nil {
+		err = ServerError{message: fmt.Sprintf("unexpected issue decoding body: %s", err.Error())}
+	}
+
+	return res, err
+}
+
+func gzipDecode(r io.Reader) ([]byte, error) {
+	reader, err := gzip.NewReader(r)
+	if err != nil {
+		return nil, fmt.Errorf("unexpected issue decoding body (%w)", err)
+	}
+	defer reader.Close()
+
+	return io.ReadAll(reader)
+}
+
+func compressDecode(r io.Reader) ([]byte, error) {
+	reader := lzw.NewReader(r, lzw.MSB, 8)
+	defer reader.Close()
+
+	data, err := io.ReadAll(reader)
+	return data, err
 }

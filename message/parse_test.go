@@ -1,12 +1,160 @@
 package message
 
 import (
+	"bytes"
+	"compress/lzw"
+	"encoding/base64"
 	"net/mail"
 	"testing"
 	"time"
 
 	"github.com/tony-montemuro/http/internal/assert"
 )
+
+func TestRequestLineParser_parse(t *testing.T) {
+	tests := []struct {
+		name        string
+		line        []byte
+		expected    RequestLine
+		expectError bool
+	}{
+		{
+			name:        "Standard GET method",
+			line:        []byte("GET / HTTP/1.0"),
+			expected:    RequestLine{Method: Method("GET"), Uri: AbsPathUri{Path: [][]byte{{}}, Params: [][]byte{{}}, Query: []byte{}}, Version: string("1.0")},
+			expectError: false,
+		},
+		{
+			name:        "More complex POST method",
+			line:        []byte("POST /data/document/4;param/3;test!true?foo=bar HTTP/2.0"),
+			expected:    RequestLine{Method: Method("POST"), Uri: AbsPathUri{Path: [][]byte{[]byte("data"), []byte("document"), []byte("4")}, Params: [][]byte{[]byte("param/3"), []byte("test!true")}, Query: []byte("foo=bar")}, Version: string("2.0")},
+			expectError: false,
+		},
+		{
+			name:        "Incomplete line",
+			line:        []byte("GET /test"),
+			expectError: true,
+		},
+		{
+			name:        "Overcomplete line",
+			line:        []byte("HEAD /test/document?baz=x HTTP/1.0 bad"),
+			expectError: true,
+		},
+		{
+			name:        "Bad method",
+			line:        []byte("WR\rONG / HTTP/1.0"),
+			expectError: true,
+		},
+		{
+			name:        "Bad uri",
+			line:        []byte("HEAD /malformed/u\nrl HTTP/1.0"),
+			expectError: true,
+		},
+		{
+			name:        "Bad version",
+			line:        []byte("POST / HTTP/0.9"),
+			expectError: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			res, err := requestLineParser(tt.line).parse()
+
+			ok := assert.ErrorStatus(t, err, tt.expectError)
+			if !ok {
+				return
+			}
+
+			assert.Equal(t, res.Method, tt.expected.Method)
+			assert.MatrixEqual(t, res.Uri.Path, tt.expected.Uri.Path)
+			assert.MatrixEqual(t, res.Uri.Params, tt.expected.Uri.Params)
+			assert.SliceEqual(t, res.Uri.Query, tt.expected.Uri.Query)
+			assert.Equal(t, res.Version, tt.expected.Version)
+		})
+	}
+}
+
+func TestVersionParser_parse(t *testing.T) {
+	tests := []struct {
+		name        string
+		version     []byte
+		expected    string
+		expectError bool
+	}{
+		{
+			name:        "HTTP/1.0",
+			version:     []byte("HTTP/1.0"),
+			expected:    "1.0",
+			expectError: false,
+		},
+		{
+			name:        "HTTP/1.1",
+			version:     []byte("HTTP/1.1"),
+			expected:    "1.1",
+			expectError: false,
+		},
+		{
+			name:        "HTTP/2.0",
+			version:     []byte("HTTP/2.0"),
+			expected:    "2.0",
+			expectError: false,
+		},
+		{
+			name:        "Incomplete version",
+			version:     []byte("HTTP"),
+			expectError: true,
+		},
+		{
+			name:        "Malformed version number (missing first digit)",
+			version:     []byte("HTTP/.12"),
+			expectError: true,
+		},
+		{
+			name:        "Malformed version number (missing second digit)",
+			version:     []byte("HTTP/34."),
+			expectError: true,
+		},
+		{
+			name:        "Malformed version number (multiple decimal places)",
+			version:     []byte("HTTP/1.2.3"),
+			expectError: true,
+		},
+		{
+			name:        "Malformed version number (non-numeric first number)",
+			version:     []byte("HTTP/1f.0"),
+			expectError: true,
+		},
+		{
+			name:        "Malformed version number (non-numeric second number)",
+			version:     []byte("HTTP/1.1e2"),
+			expectError: true,
+		},
+		{
+			name:        "Malformed version number (below 1.0)",
+			version:     []byte("HTTP/0.9"),
+			expectError: true,
+		},
+		{
+			name:        "Wrong protocol",
+			version:     []byte("REST/1.0"),
+			expectError: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			res, err := versionParser(tt.version).parse()
+
+			ok := assert.ErrorStatus(t, err, tt.expectError)
+			if !ok {
+				return
+			}
+
+			assert.Equal(t, res, tt.expected)
+		})
+	}
+}
 
 func TestRequestHeaderParser_Parse(t *testing.T) {
 	tests := []struct {
@@ -1617,6 +1765,179 @@ func TestContentTypeParser_parse(t *testing.T) {
 			assert.Equal(t, res.Type, tt.expected.Type)
 			assert.Equal(t, res.Subtype, tt.expected.Subtype)
 			assert.MapEqual(t, res.Parameters, tt.expected.Parameters)
+		})
+	}
+}
+
+func TestRequestBodyParser_parse(t *testing.T) {
+	tests := []struct {
+		name        string
+		headers     RequestHeaders
+		body        requestBodyParser
+		expected    []byte
+		expectError bool
+	}{
+		{
+			name: "Hello world",
+			headers: RequestHeaders{
+				ContentEncoding: "",
+				ContentLength:   13,
+			},
+			body:        requestBodyParser([]byte("Hello, world!")),
+			expected:    []byte("Hello, world!"),
+			expectError: false,
+		},
+		{
+			name: "Empty body",
+			headers: RequestHeaders{
+				ContentEncoding: "",
+				ContentLength:   0,
+			},
+			body:        requestBodyParser([]byte("")),
+			expected:    []byte(""),
+			expectError: false,
+		},
+		{
+			name: "Content-Length exceeds body length",
+			headers: RequestHeaders{
+				ContentEncoding: "",
+				ContentLength:   10,
+			},
+			body:        requestBodyParser([]byte("abc")),
+			expectError: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			res, err := tt.body.parse(tt.headers)
+
+			ok := assert.ErrorStatus(t, err, tt.expectError)
+			if !ok {
+				return
+			}
+
+			assert.SliceEqual(t, res, tt.expected)
+		})
+	}
+}
+
+func TestGzipDecode(t *testing.T) {
+	tests := []struct {
+		name        string
+		input       string
+		expected    []byte
+		expectError bool
+	}{
+		{
+			name:        "Hello, World!",
+			input:       "H4sIAAAAAAAAA/JIzcnJ11EIzy/KSVEEAAAA//8DANDDSuwNAAAA",
+			expected:    []byte("Hello, World!"),
+			expectError: false,
+		},
+		{
+			name:        "Plaintext",
+			input:       "H4sIAAAAAAAAAwrJSFUoLM1MzlZIKsovz1NIy69QyCrNLShWyC9LLVIoAUrnJFZVKqTkpwMAAAD//wMAOaNPQSsAAAA=",
+			expected:    []byte("The quick brown fox jumps over the lazy dog"),
+			expectError: false,
+		},
+		{
+			name:        "Base case for compression effectiveness",
+			input:       "H4sIAAAAAAAAA0pMJBUAAAAA//8DAH2610cyAAAA",
+			expected:    []byte("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
+			expectError: false,
+		},
+		{
+			name:        "JSON",
+			input:       "H4sIAAAAAAAAA6pWyirOz1OyKikqTdVRSs4vzStRsjI0MtZRykstLklNUbKqVkpUslJKUqqtBQAAAP//AwDyGrZhLAAAAA==",
+			expected:    []byte("{\"json\":true,\"count\":123,\"nested\":{\"a\":\"b\"}}"),
+			expectError: false,
+		},
+		{
+			name:        "Multi-line input",
+			input:       "H4sIAAAAAAAAA/LJzEs15PIBkkZg0hhMmgAAAAD//wMAEq75vBcAAAA=",
+			expected:    []byte("Line1\nLine2\nLine3\nLine4"),
+			expectError: false,
+		},
+		{
+			name:        "De-compressed input",
+			input:       "SGVsbG8sIFdvcmxkIQ==",
+			expectError: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gzip, err := base64.StdEncoding.DecodeString(tt.input)
+			if err != nil {
+				t.Fatalf("Test could not complete! (%s)", err.Error())
+			}
+
+			res, err := gzipDecode(bytes.NewReader(gzip))
+
+			if err != nil {
+				if !tt.expectError {
+					t.Errorf("got unexpected error: %s", err.Error())
+				}
+				return
+			}
+
+			if tt.expectError {
+				t.Errorf("did not get expected error! (%v)", res)
+			}
+
+			assert.SliceEqual(t, res, tt.expected)
+		})
+	}
+}
+
+func TestCompressDecoder(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected []byte
+	}{
+		{
+			name:     "Hello world",
+			input:    "Hello, World!",
+			expected: []byte("Hello, World!"),
+		},
+		{
+			name:     "Empty string",
+			input:    "",
+			expected: []byte(""),
+		},
+		{
+			name:     "Single character",
+			input:    "A",
+			expected: []byte("A"),
+		},
+		{
+			name:     "Repeated pattern (compresses well)",
+			input:    "aaaaaabbbbbbcccccc",
+			expected: []byte("aaaaaabbbbbbcccccc"),
+		},
+		{
+			name:     "Special characters and numbers",
+			input:    "Test123!@# $%^&*()",
+			expected: []byte("Test123!@# $%^&*()"),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var buf bytes.Buffer
+			w := lzw.NewWriter(&buf, lzw.MSB, 8)
+			w.Write([]byte(tt.input))
+			w.Close()
+
+			res, err := compressDecode(bytes.NewReader(buf.Bytes()))
+			if err != nil {
+				t.Errorf("got unexpected error: %s", err.Error())
+				return
+			}
+
+			assert.SliceEqual(t, res, tt.expected)
 		})
 	}
 }
