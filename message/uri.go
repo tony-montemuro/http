@@ -7,6 +7,11 @@ import (
 	"github.com/tony-montemuro/http/internal/constructs"
 )
 
+type Uri interface {
+	GetPath() []byte
+	marshal() []byte
+}
+
 type escapeSequence []byte
 
 func (s escapeSequence) unescape(i int) (byte, error) {
@@ -28,23 +33,147 @@ func (s escapeSequence) unescape(i int) (byte, error) {
 	return b, nil
 }
 
-type AbsPathUri struct {
-	Path   [][]byte
+type AbsoluteUri struct {
+	Scheme []byte
+	Path   []byte
+}
+
+func (u AbsoluteUri) GetPath() []byte {
+	return u.marshal()
+}
+
+type absoluteUriParser []byte
+
+func (a absoluteUriParser) Parse() (AbsoluteUri, error) {
+	var uri AbsoluteUri
+	scheme, remaining, found := bytes.Cut(a, []byte{':'})
+	if !found {
+		return uri, fmt.Errorf("could not determine scheme")
+	}
+
+	err := constructs.Scheme(scheme).Validate()
+	if err != nil {
+		return uri, err
+	}
+	uri.Scheme = scheme
+
+	var path []byte
+	i := 0
+
+	for i < len(remaining) {
+		b := constructs.HttpByte(remaining[i])
+
+		if b.IsEscape() {
+			c, err := escapeSequence(remaining).unescape(i)
+			if err != nil {
+				return uri, err
+			}
+			i += 3
+			b = constructs.HttpByte(c)
+		} else {
+			i++
+		}
+
+		if !b.IsReserved() && !b.IsUnreserved() {
+			return uri, fmt.Errorf("queries contain invalid byte (%s)", remaining)
+		}
+
+		path = append(path, byte(b))
+	}
+
+	uri.Path = path
+	return uri, nil
+}
+
+type RelativeUri struct {
+	NetLoc []byte
+	Path   []byte
 	Params [][]byte
 	Query  []byte
 }
 
+func (u RelativeUri) GetPath() []byte {
+	return u.marshal()
+}
+
+const (
+	NetPath = "net_path"
+	AbsPath = "abs_path"
+	RelPath = "rel_path"
+)
+
+func (u RelativeUri) getPathForm() string {
+	if len(u.NetLoc) > 0 {
+		return NetPath
+	}
+	if len(u.Path) == 0 || u.Path[0] != constructs.ByteSeparator {
+		return RelPath
+	}
+	return AbsPath
+}
+
+type relativeUriParser []byte
+
+func (r relativeUriParser) parse() (RelativeUri, error) {
+	uri := RelativeUri{}
+	start := 0
+
+	if len(r) >= 2 && r[0] == constructs.ByteSeparator && r[1] == constructs.ByteSeparator {
+		i := 2
+
+		for i < len(r) && (constructs.HttpByte(r[i]).IsPChar() || r[i] == ';' || r[i] == '?') {
+			i++
+		}
+
+		uri.NetLoc = r[2:i]
+		start = i
+	}
+
+	if start == len(r) {
+		return uri, nil
+	}
+
+	var err error
+	var path, query []byte
+	var params [][]byte
+
+	if start > 0 || r[start] == constructs.ByteSeparator {
+		path, params, query, err = absPathUriParser(r[start:]).parse()
+	} else {
+		path, params, query, err = relPathUriParser(r[start:]).parse()
+	}
+
+	if err != nil {
+		return uri, err
+	}
+
+	uri.Path = path
+	uri.Params = params
+	uri.Query = query
+
+	return uri, nil
+}
+
 type absPathUriParser []byte
 
-func (ap absPathUriParser) parse() (AbsPathUri, error) {
-	uri := AbsPathUri{}
-	if len(ap) == 0 {
-		return uri, ClientError{message: "Invalid request uri: missing uri"}
+func (rp absPathUriParser) parse() ([]byte, [][]byte, []byte, error) {
+	var path, query []byte
+	var params [][]byte
+	var err error = fmt.Errorf("abs_path must begin with /")
+
+	if len(rp) == 0 || rp[0] != constructs.ByteSeparator {
+		return path, params, query, err
 	}
 
-	if ap[0] != constructs.ByteSeparator {
-		return uri, ClientError{message: fmt.Sprintf("Invalid request uri: uri must begin with '%c'", constructs.ByteSeparator)}
-	}
+	path, params, query, err = relPathUriParser(rp[1:]).parse()
+	return append([]byte("/"), path...), params, query, err
+}
+
+type relPathUriParser []byte
+
+func (ap relPathUriParser) parse() ([]byte, [][]byte, []byte, error) {
+	var path, query []byte
+	var params [][]byte
 
 	paramsIndex := bytes.IndexByte(ap, constructs.ByteParam)
 	queryIndex := bytes.IndexByte(ap, constructs.ByteQuery)
@@ -64,38 +193,34 @@ func (ap absPathUriParser) parse() (AbsPathUri, error) {
 		paramsIndex = queryIndex
 	}
 
-	pathSlice := ap[1:paramsIndex]
-
-	path, err := uriPathParser(pathSlice).parse()
+	path, err := uriPathParser(ap[:paramsIndex]).parse()
 	if err != nil {
-		return uri, ClientError{message: fmt.Sprintf("Invalid request uri path: %s", err)}
+		return path, params, query, ClientError{message: fmt.Sprintf("Invalid request uri path: %s", err)}
 	}
-	uri.Path = path
 
-	params, err := uriParamsParser(paramsSlice).parse()
+	params, err = uriParamsParser(paramsSlice).parse()
 	if err != nil {
-		return uri, ClientError{message: fmt.Sprintf("Invalid request uri param(s): %s", err)}
+		return path, params, query, ClientError{message: fmt.Sprintf("Invalid request uri param(s): %s", err)}
 	}
-	uri.Params = params
 
-	query, err := uriQueryParser(querySlice).parse()
+	query, err = uriQueryParser(querySlice).parse()
 	if err != nil {
-		return uri, ClientError{message: fmt.Sprintf("Invalid request uri querie(s): %s", err)}
+		return path, params, query, ClientError{message: fmt.Sprintf("Invalid request uri querie(s): %s", err)}
 	}
-	uri.Query = query
 
-	return uri, nil
+	return path, params, query, nil
 }
 
 type uriPathParser []byte
 
-func (p uriPathParser) parse() ([][]byte, error) {
+func (p uriPathParser) parse() ([]byte, error) {
 	var path [][]byte
+	var res []byte
 	unescaped := bytes.Split(p, []byte{byte(constructs.ByteSeparator)})
 
 	// special case: if we have at least 1 segment, the first segment cannot be empty according to RFC 1945 (see: https://datatracker.ietf.org/doc/html/rfc1945#section-3.2.1)
 	if len(unescaped) > 1 && len(unescaped[0]) == 0 {
-		return unescaped, fmt.Errorf("first segment cannot be empty")
+		return res, fmt.Errorf("first segment cannot be empty")
 	}
 
 	for _, p := range unescaped {
@@ -108,7 +233,7 @@ func (p uriPathParser) parse() ([][]byte, error) {
 			if b.IsEscape() {
 				c, err := escapeSequence(p).unescape(j)
 				if err != nil {
-					return path, err
+					return res, err
 				}
 				j += 3
 				b = constructs.HttpByte(c)
@@ -117,7 +242,7 @@ func (p uriPathParser) parse() ([][]byte, error) {
 			}
 
 			if !b.IsPChar() {
-				return path, fmt.Errorf("path contains invalid byte (%s)", p)
+				return res, fmt.Errorf("path contains invalid byte (%s)", p)
 			}
 
 			part = append(part, byte(b))
@@ -126,7 +251,8 @@ func (p uriPathParser) parse() ([][]byte, error) {
 		path = append(path, part)
 	}
 
-	return path, nil
+	res = bytes.Join(path, []byte{'/'})
+	return res, nil
 }
 
 type uriParamsParser []byte

@@ -1072,7 +1072,41 @@ func TestComment_Validate(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		err := Comment(tt.string).Validate()
-		assert.ErrorStatus(t, err, tt.expectError)
+		t.Run(tt.name, func(t *testing.T) {
+			err := Comment(tt.string).Validate()
+			assert.ErrorStatus(t, err, tt.expectError)
+		})
+	}
+}
+
+func TestScheme_Validate(t *testing.T) {
+	tests := []validateCheck{
+		{
+			name:        "Standard scheme",
+			string:      "http",
+			expectError: false,
+		},
+		{
+			name:        "Scheme with valid special characters",
+			string:      "h+t-t.p",
+			expectError: false,
+		},
+		{
+			name:        "Scheme with invalid characters",
+			string:      "bad?scheme>detected!",
+			expectError: true,
+		},
+		{
+			name:        "Empty scheme",
+			string:      "",
+			expectError: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := Scheme(tt.string).Validate()
+			assert.ErrorStatus(t, err, tt.expectError)
+		})
 	}
 }

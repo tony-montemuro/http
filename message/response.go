@@ -20,7 +20,7 @@ type Methods struct {
 type responseHeaders struct {
 	Date            MessageTime
 	Pragma          PragmaDirectives
-	Location        AbsPathUri //fix later
+	Location        Uri
 	Server          server
 	WwwAuthenticate challenge
 	Allow           Methods

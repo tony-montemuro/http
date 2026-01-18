@@ -1,6 +1,7 @@
 package message
 
 import (
+	"fmt"
 	"testing"
 	"time"
 
@@ -313,6 +314,138 @@ func TestProductVersion_marshal(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			res := tt.marshaler.marshal()
+			assert.SliceEqual(t, res, tt.expected)
+		})
+	}
+}
+
+func TestAbsoluteUri_marshal(t *testing.T) {
+	tests := []marshalTest{
+		{
+			name: "Standard HTTP",
+			marshaler: &AbsoluteUri{
+				Scheme: []byte("http"),
+				Path:   []byte("//example.com/index.html"),
+			},
+			expected: []byte("http://example.com/index.html"),
+		},
+		{
+			name: "Secure HTTPS",
+			marshaler: &AbsoluteUri{
+				Scheme: []byte("https"),
+				Path:   []byte("//secure.site/login"),
+			},
+			expected: []byte("https://secure.site/login"),
+		},
+		{
+			name: "Mailto link",
+			marshaler: &AbsoluteUri{
+				Scheme: []byte("mailto"),
+				Path:   []byte("user@domain.com"),
+			},
+			expected: []byte("mailto:user@domain.com"),
+		},
+		{
+			name: "Empty Path",
+			marshaler: &AbsoluteUri{
+				Scheme: []byte("news"),
+				Path:   []byte(""),
+			},
+			expected: []byte("news:"),
+		},
+		{
+			name: "Complex Scheme",
+			marshaler: &AbsoluteUri{
+				Scheme: []byte("soap-beep+v2"),
+				Path:   []byte("//api/endpoint"),
+			},
+			expected: []byte("soap-beep+v2://api/endpoint"),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			res := tt.marshaler.marshal()
+			assert.SliceEqual(t, res, tt.expected)
+		})
+	}
+}
+
+func TestRelativeUri_marshal(t *testing.T) {
+	tests := []marshalTest{
+		{
+			name: "Simple Path",
+			marshaler: &RelativeUri{
+				Path: []byte("images/logo.png"),
+			},
+			expected: []byte("images/logo.png"),
+		},
+		{
+			name: "Rooted Path",
+			marshaler: &RelativeUri{
+				Path: []byte("/usr/local/bin"),
+			},
+			expected: []byte("/usr/local/bin"),
+		},
+		{
+			name: "Network Location with Path",
+			marshaler: &RelativeUri{
+				NetLoc: []byte("example.com"),
+				Path:   []byte("/home"),
+			},
+			expected: []byte("//example.com/home"),
+		},
+		{
+			name: "Path with Parameters",
+			marshaler: &RelativeUri{
+				Path: []byte("item"),
+				Params: [][]byte{
+					[]byte("version=1"),
+					[]byte("format=json"),
+				},
+			},
+			expected: []byte("item;version=1;format=json"),
+		},
+		{
+			name: "Path with Query",
+			marshaler: &RelativeUri{
+				Path:  []byte("/search"),
+				Query: []byte("q=golang"),
+			},
+			expected: []byte("/search?q=golang"),
+		},
+		{
+			name: "Query Only",
+			marshaler: &RelativeUri{
+				Query: []byte("page=5"),
+			},
+			expected: []byte("?page=5"),
+		},
+		{
+			name: "All Components",
+			marshaler: &RelativeUri{
+				NetLoc: []byte("api.srv"),
+				Path:   []byte("/v1/user"),
+				Params: [][]byte{
+					[]byte("auth=token"),
+				},
+				Query: []byte("debug=true"),
+			},
+			expected: []byte("//api.srv/v1/user;auth=token?debug=true"),
+		},
+		{
+			name: "NetLoc Only",
+			marshaler: &RelativeUri{
+				NetLoc: []byte("localhost:8080"),
+			},
+			expected: []byte("//localhost:8080"),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			res := tt.marshaler.marshal()
+			fmt.Println(string(res), string(tt.expected))
 			assert.SliceEqual(t, res, tt.expected)
 		})
 	}

@@ -1,6 +1,7 @@
 package message
 
 import (
+	"bytes"
 	"fmt"
 	"sort"
 	"strconv"
@@ -23,6 +24,10 @@ func (h responseHeaders) marshal(hasBody bool) []byte {
 
 	headers = append(headers, marshalHeader("Date", h.Date)...)
 	headers = append(headers, marshalHeader("Pragma", h.Pragma)...)
+	if h.Location != nil {
+		headers = append(headers, marshalHeader("Location", h.Location)...)
+	}
+
 	headers = append(headers, marshalHeader("Server", h.Server)...)
 	headers = append(headers, marshalHeader("WWW-Authenticate", h.WwwAuthenticate)...)
 	headers = append(headers, marshalHeader("Allow", h.Allow)...)
@@ -85,6 +90,30 @@ func (pv ProductVersion) marshal() []byte {
 
 	if len(pv.Version) > 0 {
 		res = append(res, fmt.Sprintf("/%s", pv.Version)...)
+	}
+
+	return res
+}
+
+func (u AbsoluteUri) marshal() []byte {
+	return fmt.Appendf([]byte{}, "%s:%s", u.Scheme, u.Path)
+}
+
+func (u RelativeUri) marshal() []byte {
+	var res []byte
+
+	if len(u.NetLoc) > 0 {
+		res = fmt.Appendf(res, "//%s", u.NetLoc)
+	}
+
+	res = append(res, u.Path...)
+	if len(u.Params) > 0 {
+		joined := bytes.Join(u.Params, []byte{';'})
+		res = fmt.Appendf(res, ";%s", joined)
+	}
+
+	if len(u.Query) > 0 {
+		res = fmt.Appendf(res, "?%s", u.Query)
 	}
 
 	return res

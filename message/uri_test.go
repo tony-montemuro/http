@@ -56,71 +56,348 @@ func TestEscapeSequence_unescape(t *testing.T) {
 	}
 }
 
-func TestAbsPathUriParser_parse(t *testing.T) {
+func AbsoluteUriParser_parse(t *testing.T) {
 	tests := []struct {
 		name        string
 		uri         []byte
-		expected    AbsPathUri
+		expected    AbsoluteUri
 		expectError bool
 	}{
 		{
-			name:        "Root uri (/)",
-			uri:         []byte("/"),
-			expected:    AbsPathUri{Path: [][]byte{{}}, Params: [][]byte{{}}, Query: []byte{}},
+			name: "Basic HTTP URL",
+			uri:  []byte("http://www.w3.org/pub/WWW/TheProject.html"),
+			expected: AbsoluteUri{
+				Scheme: []byte("http"),
+				Path:   []byte("//www.w3.org/pub/WWW/TheProject.html"),
+			},
 			expectError: false,
 		},
 		{
-			name:        "Uri with no params or query (/info/document/1)",
-			uri:         []byte("/info/document/1"),
-			expected:    AbsPathUri{Path: [][]byte{[]byte("info"), []byte("document"), []byte("1")}, Params: [][]byte{{}}, Query: []byte{}},
+			name:        "Invalid empty scheme",
+			uri:         []byte(":path/to/resource"),
+			expectError: true,
+		},
+		{
+			name:        "Invalid missing colon",
+			uri:         []byte("http-www.example.com"),
+			expectError: true,
+		},
+		{
+			name: "Empty path after scheme",
+			uri:  []byte("http:"),
+			expected: AbsoluteUri{
+				Scheme: []byte("http"),
+				Path:   []byte(""), // or nil, depending on implementation preferences
+			},
 			expectError: false,
 		},
 		{
-			name:        "Uri with no query (/data;test/3;wow!)",
-			uri:         []byte("/data;test/3;wow!"),
-			expected:    AbsPathUri{Path: [][]byte{[]byte("data")}, Params: [][]byte{[]byte("test/3"), []byte("wow!")}, Query: []byte{}},
+			name: "Complex valid scheme chars",
+			uri:  []byte("soap.beep-1+2://api"),
+			expected: AbsoluteUri{
+				Scheme: []byte("soap.beep-1+2"),
+				Path:   []byte("//api"),
+			},
 			expectError: false,
 		},
 		{
-			name:        "Uri with no param (/foo/bar?test=3&t;est)",
-			uri:         []byte("/foo/bar?test=3&t;est"),
-			expected:    AbsPathUri{Path: [][]byte{[]byte("foo"), []byte("bar")}, Params: [][]byte{{}}, Query: []byte("test=3&t;est")},
+			name:        "Invalid underscore in scheme",
+			uri:         []byte("my_scheme:data"),
+			expectError: true,
+		},
+		{
+			name: "Opaque URN",
+			uri:  []byte("news:comp.infosystems.www.servers.unix"),
+			expected: AbsoluteUri{
+				Scheme: []byte("news"),
+				Path:   []byte("comp.infosystems.www.servers.unix"),
+			},
 			expectError: false,
 		},
 		{
-			name:        "Uri with no path (/;data/here?f00=bar)",
-			uri:         []byte("/;data/here?f00=bar"),
-			expected:    AbsPathUri{Path: [][]byte{{}}, Params: [][]byte{[]byte("data/here")}, Query: []byte("f00=bar")},
+			name: "Reserved chars in path",
+			uri:  []byte("mailto:user@example.com?subject=Hello"),
+			expected: AbsoluteUri{
+				Scheme: []byte("mailto"),
+				Path:   []byte("user@example.com?subject=Hello"),
+			},
 			expectError: false,
 		},
 		{
-			name:        "Uri with no params or path (/?;)",
-			uri:         []byte("/?;"),
-			expected:    AbsPathUri{Path: [][]byte{{}}, Params: [][]byte{{}}, Query: []byte(";")},
-			expectError: false,
+			name:        "Invalid space in path",
+			uri:         []byte("file:documents/my file.txt"),
+			expectError: true,
 		},
 		{
-			name:        "Uri with unsafe character (/te st/document/2)",
-			uri:         []byte("/te st/document/2"),
-			expected:    AbsPathUri{},
+			name:        "Invalid fragment in absoluteURI",
+			uri:         []byte("http://example.com#heading1"),
 			expectError: true,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			res, err := absPathUriParser(tt.uri).parse()
+			res, err := absoluteUriParser(tt.uri).Parse()
 
 			ok := assert.ErrorStatus(t, err, tt.expectError)
 			if !ok {
 				return
 			}
 
-			assert.MatrixEqual(t, res.Path, tt.expected.Path)
+			assert.SliceEqual(t, res.Path, tt.expected.Path)
+			assert.SliceEqual(t, res.Scheme, tt.expected.Scheme)
+		})
+	}
+}
+
+func RelativeUriParser_parse(t *testing.T) {
+	tests := []struct {
+		name        string
+		uri         []byte
+		expected    RelativeUri
+		expectError bool
+	}{
+		{
+			name: "Basic relative path",
+			uri:  []byte("images/logo.png"),
+			expected: RelativeUri{
+				Path: []byte("images/logo.png"),
+			},
+			expectError: false,
+		},
+		{
+			name: "Absolute path",
+			uri:  []byte("/usr/local/bin"),
+			expected: RelativeUri{
+				Path: []byte("/usr/local/bin"),
+			},
+			expectError: false,
+		},
+		{
+			name: "Network path with resource",
+			uri:  []byte("//example.com/index.html"),
+			expected: RelativeUri{
+				NetLoc: []byte("example.com"),
+				Path:   []byte("/index.html"),
+			},
+			expectError: false,
+		},
+		{
+			name: "Path with multiple parameters",
+			uri:  []byte("library;version=2;format=json"),
+			expected: RelativeUri{
+				Path: []byte("library"),
+				Params: [][]byte{
+					[]byte("version=2"),
+					[]byte("format=json"),
+				},
+			},
+			expectError: false,
+		},
+		{
+			name: "Query string only",
+			uri:  []byte("?search=test&page=1"),
+			expected: RelativeUri{
+				Query: []byte("search=test&page=1"),
+			},
+			expectError: false,
+		},
+		{
+			name: "Full URI components",
+			uri:  []byte("//api.srv/v1/user;auth=oauth?debug=true"),
+			expected: RelativeUri{
+				NetLoc: []byte("api.srv"),
+				Path:   []byte("/v1/user"),
+				Params: [][]byte{
+					[]byte("auth=oauth"),
+				},
+				Query: []byte("debug=true"),
+			},
+			expectError: false,
+		},
+		{
+			name: "Parameters containing slashes",
+			uri:  []byte("file;type=application/pdf"),
+			expected: RelativeUri{
+				Path: []byte("file"),
+				Params: [][]byte{
+					[]byte("type=application/pdf"),
+				},
+			},
+			expectError: false,
+		},
+		{
+			name: "Path with valid special chars",
+			uri:  []byte("user:pass@home+id"),
+			expected: RelativeUri{
+				Path: []byte("user:pass@home+id"),
+			},
+			expectError: false,
+		},
+		{
+			name:        "Invalid fragment in relativeURI",
+			uri:         []byte("/index#section1"),
+			expectError: true,
+		},
+		{
+			name:        "Invalid space in path",
+			uri:         []byte("/my folder/file"),
+			expectError: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			res, err := relativeUriParser(tt.uri).parse()
+
+			ok := assert.ErrorStatus(t, err, tt.expectError)
+			if !ok {
+				return
+			}
+
+			assert.SliceEqual(t, res.NetLoc, tt.expected.NetLoc)
+			assert.SliceEqual(t, res.Path, tt.expected.Path)
 			assert.MatrixEqual(t, res.Params, tt.expected.Params)
 			assert.SliceEqual(t, res.Query, tt.expected.Query)
 		})
+	}
+}
 
+type pathExpected struct {
+	path   []byte
+	params [][]byte
+	query  []byte
+}
+
+func TestAbsPathUriParser_parse(t *testing.T) {
+	tests := []struct {
+		name        string
+		uri         []byte
+		expected    pathExpected
+		expectError bool
+	}{
+		{
+			name:        "Root path",
+			uri:         []byte("/"),
+			expected:    pathExpected{path: []byte{'/'}, params: [][]byte{{}}, query: []byte{}},
+			expectError: false,
+		},
+		{
+			name:        "Uri with no params or query",
+			uri:         []byte("/info/document/1"),
+			expected:    pathExpected{path: []byte("/info/document/1"), params: [][]byte{{}}, query: []byte{}},
+			expectError: false,
+		},
+		{
+			name:        "Uri with no query",
+			uri:         []byte("/data;test/3;wow!"),
+			expected:    pathExpected{path: []byte("/data"), params: [][]byte{[]byte("test/3"), []byte("wow!")}, query: []byte{}},
+			expectError: false,
+		},
+		{
+			name:        "Uri with no param",
+			uri:         []byte("/foo/bar?test=3&t;est"),
+			expected:    pathExpected{path: []byte("/foo/bar"), params: [][]byte{{}}, query: []byte("test=3&t;est")},
+			expectError: false,
+		},
+		{
+			name:        "Uri with no path",
+			uri:         []byte("/;data/here?f00=bar"),
+			expected:    pathExpected{path: []byte{'/'}, params: [][]byte{[]byte("data/here")}, query: []byte("f00=bar")},
+			expectError: false,
+		},
+		{
+			name:        "Uri with no params or path",
+			uri:         []byte("/?;"),
+			expected:    pathExpected{path: []byte{'/'}, params: [][]byte{{}}, query: []byte(";")},
+			expectError: false,
+		},
+		{
+			name:        "Uri with unsafe character",
+			uri:         []byte("/te st/document/2"),
+			expectError: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			path, params, query, err := absPathUriParser(tt.uri).parse()
+
+			ok := assert.ErrorStatus(t, err, tt.expectError)
+			if !ok {
+				return
+			}
+
+			assert.SliceEqual(t, path, tt.expected.path)
+			assert.MatrixEqual(t, params, tt.expected.params)
+			assert.SliceEqual(t, query, tt.expected.query)
+		})
+	}
+}
+
+func TestRelPathUriParser_parse(t *testing.T) {
+	tests := []struct {
+		name        string
+		uri         []byte
+		expected    pathExpected
+		expectError bool
+	}{
+		{
+			name:        "Empty input",
+			uri:         []byte(""),
+			expected:    pathExpected{path: []byte{}, params: [][]byte{{}}, query: []byte{}},
+			expectError: false,
+		},
+		{
+			name:        "Uri with no params or query",
+			uri:         []byte("info/document/1"),
+			expected:    pathExpected{path: []byte("info/document/1"), params: [][]byte{{}}, query: []byte{}},
+			expectError: false,
+		},
+		{
+			name:        "Uri with no query",
+			uri:         []byte("data;test/3;wow!"),
+			expected:    pathExpected{path: []byte("data"), params: [][]byte{[]byte("test/3"), []byte("wow!")}, query: []byte{}},
+			expectError: false,
+		},
+		{
+			name:        "Uri with no param",
+			uri:         []byte("foo/bar?test=3&t;est"),
+			expected:    pathExpected{path: []byte("foo/bar"), params: [][]byte{{}}, query: []byte("test=3&t;est")},
+			expectError: false,
+		},
+		{
+			name:        "Uri with no path",
+			uri:         []byte(";data/here?f00=bar"),
+			expected:    pathExpected{path: []byte{}, params: [][]byte{[]byte("data/here")}, query: []byte("f00=bar")},
+			expectError: false,
+		},
+		{
+			name:        "Uri with no params or path",
+			uri:         []byte("?;"),
+			expected:    pathExpected{path: []byte{}, params: [][]byte{{}}, query: []byte(";")},
+			expectError: false,
+		},
+		{
+			name:        "Uri with unsafe character",
+			uri:         []byte("te st/document/2"),
+			expectError: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			path, params, query, err := relPathUriParser(tt.uri).parse()
+
+			ok := assert.ErrorStatus(t, err, tt.expectError)
+			if !ok {
+				return
+			}
+
+			assert.SliceEqual(t, path, tt.expected.path)
+			assert.MatrixEqual(t, params, tt.expected.params)
+			assert.SliceEqual(t, query, tt.expected.query)
+		})
 	}
 }
 
@@ -128,67 +405,66 @@ func TestUriPathParser_parse(t *testing.T) {
 	tests := []struct {
 		name        string
 		path        []byte
-		expected    [][]byte
+		expected    []byte
 		expectError bool
 	}{
 		{
-			name:        "Root path (/)",
+			name:        "Root path",
 			path:        []byte{},
-			expected:    [][]byte{{}},
+			expected:    []byte{},
 			expectError: false,
 		},
 		{
-			name:        "Single path (/info)",
+			name:        "Single path",
 			path:        []byte("info"),
-			expected:    [][]byte{[]byte("info")},
+			expected:    []byte("info"),
 			expectError: false,
 		},
 		{
-			name:        "Muli path (/info/document/1)",
+			name:        "Muli path",
 			path:        []byte("info/document/1"),
-			expected:    [][]byte{[]byte("info"), []byte("document"), []byte("1")},
+			expected:    []byte("info/document/1"),
 			expectError: false,
 		},
 		{
-			name:        "Empty first segment (//test)",
+			name:        "Empty first segment",
 			path:        []byte("/test"),
-			expected:    [][]byte{},
 			expectError: true,
 		},
 		{
-			name:        "Escaped path (/info/{test})",
+			name:        "Escaped path",
 			path:        []byte("info/%7Btest%7D"),
-			expected:    [][]byte{[]byte("info"), []byte("{test}")},
+			expected:    []byte("info/{test}"),
 			expectError: false,
 		},
 		{
-			name:        "Non-hex escape (/info/te%XDst)",
+			name:        "Non-hex escape",
 			path:        []byte("info/te%XDst"),
 			expectError: true,
 		},
 		{
-			name:        "Trimmed escape (/info/test%1)",
+			name:        "Trimmed escape",
 			path:        []byte("info/test%1"),
 			expectError: true,
 		},
 		{
-			name:        "Invalid characters path (/in;fo/te?st)",
+			name:        "Invalid characters path",
 			path:        []byte("in;fo/te?st"),
 			expectError: true,
 		},
 		{
-			name:        "Strange but valid path (/test//a//)",
+			name:        "Strange but valid path",
 			path:        []byte("test//a//"),
-			expected:    [][]byte{[]byte("test"), []byte(""), []byte("a"), []byte(""), []byte("")},
+			expected:    []byte("test//a//"),
 			expectError: false,
 		},
 		{
-			name:        "Escaped space (/foo%20test)",
+			name:        "Escaped space",
 			path:        []byte("foo%20test"),
 			expectError: true,
 		},
 		{
-			name:        "Escaped delete (/foo%7Ftest)",
+			name:        "Escaped delete",
 			path:        []byte("foo%7Fbar"),
 			expectError: true,
 		},
@@ -203,7 +479,7 @@ func TestUriPathParser_parse(t *testing.T) {
 				return
 			}
 
-			assert.MatrixEqual(t, res, tt.expected)
+			assert.SliceEqual(t, res, tt.expected)
 		})
 	}
 }

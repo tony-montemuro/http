@@ -37,7 +37,7 @@ func (b HttpByte) IsEscape() bool {
 }
 
 func (b HttpByte) IsPChar() bool {
-	return b.IsUnreserved() || slices.Contains([]HttpByte{':', '@', '&', '=', '.'}, b)
+	return b.IsUnreserved() || b.IsEscape() || slices.Contains([]HttpByte{':', '@', '&', '=', '.'}, b)
 }
 
 func (b HttpByte) IsUnreserved() bool {
@@ -269,6 +269,22 @@ func (c Comment) Validate() error {
 
 	if score > 0 {
 		return fmt.Errorf("comment not properly closed (%s)", c)
+	}
+
+	return nil
+}
+
+type Scheme []byte
+
+func (s Scheme) Validate() error {
+	if len(s) == 0 {
+		return fmt.Errorf("scheme cannot be empty")
+	}
+
+	for _, c := range s {
+		if !HttpByte(c).IsAlpha() && !HttpByte(c).IsNumeric() && c != '+' && c != '-' && c != '.' {
+			return fmt.Errorf("scheme contains invalid bytes (%s)", s)
+		}
 	}
 
 	return nil

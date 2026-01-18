@@ -21,13 +21,13 @@ func TestRequestLineParser_parse(t *testing.T) {
 		{
 			name:        "Standard GET method",
 			line:        []byte("GET / HTTP/1.0"),
-			expected:    RequestLine{Method: Method("GET"), Uri: AbsPathUri{Path: [][]byte{{}}, Params: [][]byte{{}}, Query: []byte{}}, Version: string("1.0")},
+			expected:    RequestLine{Method: Method("GET"), Uri: RelativeUri{Path: []byte{'/'}, Params: [][]byte{{}}, Query: []byte{}}, Version: string("1.0")},
 			expectError: false,
 		},
 		{
 			name:        "More complex POST method",
 			line:        []byte("POST /data/document/4;param/3;test!true?foo=bar HTTP/2.0"),
-			expected:    RequestLine{Method: Method("POST"), Uri: AbsPathUri{Path: [][]byte{[]byte("data"), []byte("document"), []byte("4")}, Params: [][]byte{[]byte("param/3"), []byte("test!true")}, Query: []byte("foo=bar")}, Version: string("2.0")},
+			expected:    RequestLine{Method: Method("POST"), Uri: RelativeUri{Path: []byte("/data/document/4"), Params: [][]byte{[]byte("param/3"), []byte("test!true")}, Query: []byte("foo=bar")}, Version: string("2.0")},
 			expectError: false,
 		},
 		{
@@ -55,6 +55,16 @@ func TestRequestLineParser_parse(t *testing.T) {
 			line:        []byte("POST / HTTP/0.9"),
 			expectError: true,
 		},
+		{
+			name:        "net_path uri",
+			line:        []byte("GET //test/foo HTTP/1.0"),
+			expectError: true,
+		},
+		{
+			name:        "rel_path uri",
+			line:        []byte("path/goes/here?test=bad"),
+			expectError: true,
+		},
 	}
 
 	for _, tt := range tests {
@@ -67,7 +77,8 @@ func TestRequestLineParser_parse(t *testing.T) {
 			}
 
 			assert.Equal(t, res.Method, tt.expected.Method)
-			assert.MatrixEqual(t, res.Uri.Path, tt.expected.Uri.Path)
+			assert.SliceEqual(t, res.Uri.NetLoc, tt.expected.Uri.NetLoc)
+			assert.SliceEqual(t, res.Uri.Path, tt.expected.Uri.Path)
 			assert.MatrixEqual(t, res.Uri.Params, tt.expected.Uri.Params)
 			assert.SliceEqual(t, res.Uri.Query, tt.expected.Uri.Query)
 			assert.Equal(t, res.Version, tt.expected.Version)

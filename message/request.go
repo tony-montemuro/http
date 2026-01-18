@@ -29,7 +29,7 @@ type UserAgent struct {
 
 type RequestLine struct {
 	Method  Method
-	Uri     AbsPathUri
+	Uri     RelativeUri
 	Version string
 }
 

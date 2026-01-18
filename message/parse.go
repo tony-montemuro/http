@@ -30,9 +30,13 @@ func (rl requestLineParser) parse() (RequestLine, error) {
 		return RequestLine{}, ClientError{message: fmt.Sprintf("Invalid request line: issue with request method (%s)", err.Error())}
 	}
 
-	uri, err := absPathUriParser(parts[1]).parse()
+	uri, err := relativeUriParser(parts[1]).parse()
 	if err != nil {
 		return RequestLine{}, err
+	}
+
+	if uri.getPathForm() != AbsPath {
+		return RequestLine{}, fmt.Errorf("Invalid request line: issue with uri (uri must be in the form of an absolute path)")
 	}
 
 	version, err := versionParser(parts[2]).parse()
