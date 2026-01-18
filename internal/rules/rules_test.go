@@ -6,7 +6,7 @@ import (
 	"github.com/tony-montemuro/http/internal/assert"
 )
 
-func TestExtractor_Extract(t *testing.T) {
+func TestExtract(t *testing.T) {
 	tests := []struct {
 		name     string
 		rules    string
@@ -31,7 +31,7 @@ func TestExtractor_Extract(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			assert.SliceEqual(t, Extractor(tt.rules).Extract(), tt.expected)
+			assert.SliceEqual(t, Extract(tt.rules), tt.expected)
 		})
 	}
 }

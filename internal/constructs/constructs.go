@@ -94,9 +94,7 @@ func (b HttpByte) IsTSpecial() bool {
 	return slices.Contains(tSpecials, b)
 }
 
-type Token string
-
-func (t Token) Validate() error {
+func ValidateToken(t string) error {
 	if len(t) == 0 {
 		return fmt.Errorf("token cannot be empty")
 	}
@@ -116,13 +114,11 @@ func (t Token) Validate() error {
 	return nil
 }
 
-type Text string
-
-func (t Text) Validate() error {
+func ValidateText(t string) error {
 	i := 0
 
 	for i < len(t) {
-		isLws, next := lws.Check(string(t), i)
+		isLws, next := lws.Check(t, i)
 		if isLws {
 			i = next
 			continue
@@ -138,22 +134,20 @@ func (t Text) Validate() error {
 	return nil
 }
 
-type Date string
-
-func (d Date) Parse() (time.Time, error) {
+func ParseDate(d string) (time.Time, error) {
 	var date time.Time
 
-	res, err := time.Parse(time.RFC850, string(d))
+	res, err := time.Parse(time.RFC850, d)
 	if err == nil {
 		date = res
 	}
 
-	res, err = time.Parse(time.RFC1123, string(d))
+	res, err = time.Parse(time.RFC1123, d)
 	if err == nil {
 		date = res
 	}
 
-	res, err = time.Parse(time.ANSIC, string(d))
+	res, err = time.Parse(time.ANSIC, d)
 	if err == nil {
 		date = res.In(time.FixedZone("GMT", 0))
 	}
@@ -168,11 +162,10 @@ func (d Date) Parse() (time.Time, error) {
 	}
 
 	return date, nil
+
 }
 
-type QuotedString string
-
-func (qs QuotedString) validate() error {
+func validateQuotedString(qs string) error {
 	if len(qs) < 2 {
 		return fmt.Errorf("incomplete quote string (%s)", qs)
 	}
@@ -183,7 +176,7 @@ func (qs QuotedString) validate() error {
 
 	i := 1
 	for i < len(qs)-1 {
-		isLws, next := lws.Check(string(qs), i)
+		isLws, next := lws.Check(qs, i)
 		if isLws {
 			i = next
 			continue
@@ -199,38 +192,23 @@ func (qs QuotedString) validate() error {
 	return nil
 }
 
-func (qs QuotedString) Parse() (string, error) {
-	err := qs.validate()
+func ParseQuotedString(qs string) (string, error) {
+	err := validateQuotedString(qs)
 	if err != nil {
-		return string(qs), fmt.Errorf("not a quoted string (%s)", qs)
+		return qs, fmt.Errorf("not a quoted string (%s)", qs)
 	}
 
-	return string(qs[1 : len(qs)-1]), nil
+	return qs[1 : len(qs)-1], nil
+
 }
 
-type Word string
-
-func (w Word) Validate() error {
-	err := Token(w).Validate()
+func ParseWord(w string) (string, error) {
+	err := ValidateToken(w)
 	if err == nil {
-		return nil
+		return w, nil
 	}
 
-	err = QuotedString(w).validate()
-	if err == nil {
-		return nil
-	}
-
-	return fmt.Errorf("word is not a token or quoted string (%s)", w)
-}
-
-func (w Word) Parse() (string, error) {
-	err := Token(w).Validate()
-	if err == nil {
-		return string(w), nil
-	}
-
-	s, err := QuotedString(w).Parse()
+	s, err := ParseQuotedString(w)
 	if err == nil {
 		return s, nil
 	}
@@ -238,9 +216,7 @@ func (w Word) Parse() (string, error) {
 	return "", fmt.Errorf("not a word (%s)", w)
 }
 
-type Comment string
-
-func (c Comment) Validate() error {
+func ValidateComment(c string) error {
 	if len(c) < 2 {
 		return fmt.Errorf("comment is incomplete (%s)", c)
 	}
@@ -249,7 +225,7 @@ func (c Comment) Validate() error {
 		return fmt.Errorf("comment must begin with open parenthesis (%s)", c)
 	}
 
-	err := Text(c).Validate()
+	err := ValidateText(string(c))
 	if err != nil {
 		return fmt.Errorf("comment contains invalid bytes (%s)", c)
 	}
@@ -274,7 +250,21 @@ func (c Comment) Validate() error {
 	return nil
 }
 
-type Scheme []byte
+func ValidateScheme(s string) error {
+	if len(s) == 0 {
+		return fmt.Errorf("scheme cannot be empty")
+	}
+
+	for _, c := range s {
+		if !HttpByte(c).IsAlpha() && !HttpByte(c).IsNumeric() && c != '+' && c != '-' && c != '.' {
+			return fmt.Errorf("scheme contains invalid bytes (%s)", s)
+		}
+	}
+
+	return nil
+}
+
+type Scheme string
 
 func (s Scheme) Validate() error {
 	if len(s) == 0 {

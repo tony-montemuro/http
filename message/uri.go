@@ -51,7 +51,7 @@ func (a absoluteUriParser) Parse() (AbsoluteUri, error) {
 		return uri, fmt.Errorf("could not determine scheme")
 	}
 
-	err := constructs.Scheme(scheme).Validate()
+	err := constructs.ValidateScheme(string(scheme))
 	if err != nil {
 		return uri, err
 	}

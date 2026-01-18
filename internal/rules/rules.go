@@ -6,12 +6,10 @@ import (
 	"github.com/tony-montemuro/http/internal/lws"
 )
 
-type Extractor string
-
-func (e Extractor) Extract() []string {
+func Extract(s string) []string {
 	rules := []string{}
 
-	parts := strings.Split(string(e), ",")
+	parts := strings.Split(s, ",")
 	for i, part := range parts {
 		if i+1 == len(parts) {
 			rules = append(rules, lws.TrimLeft(part))

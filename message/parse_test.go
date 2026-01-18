@@ -11,7 +11,7 @@ import (
 	"github.com/tony-montemuro/http/internal/assert"
 )
 
-func TestRequestLineParser_parse(t *testing.T) {
+func TestParseRequestLine(t *testing.T) {
 	tests := []struct {
 		name        string
 		line        []byte
@@ -69,7 +69,7 @@ func TestRequestLineParser_parse(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			res, err := requestLineParser(tt.line).parse()
+			res, err := parseRequestLine(tt.line)
 
 			ok := assert.ErrorStatus(t, err, tt.expectError)
 			if !ok {
@@ -86,76 +86,76 @@ func TestRequestLineParser_parse(t *testing.T) {
 	}
 }
 
-func TestVersionParser_parse(t *testing.T) {
+func TestParseVersion(t *testing.T) {
 	tests := []struct {
 		name        string
-		version     []byte
+		version     string
 		expected    string
 		expectError bool
 	}{
 		{
 			name:        "HTTP/1.0",
-			version:     []byte("HTTP/1.0"),
+			version:     "HTTP/1.0",
 			expected:    "1.0",
 			expectError: false,
 		},
 		{
 			name:        "HTTP/1.1",
-			version:     []byte("HTTP/1.1"),
+			version:     "HTTP/1.1",
 			expected:    "1.1",
 			expectError: false,
 		},
 		{
 			name:        "HTTP/2.0",
-			version:     []byte("HTTP/2.0"),
+			version:     "HTTP/2.0",
 			expected:    "2.0",
 			expectError: false,
 		},
 		{
 			name:        "Incomplete version",
-			version:     []byte("HTTP"),
+			version:     "HTTP",
 			expectError: true,
 		},
 		{
 			name:        "Malformed version number (missing first digit)",
-			version:     []byte("HTTP/.12"),
+			version:     "HTTP/.12",
 			expectError: true,
 		},
 		{
 			name:        "Malformed version number (missing second digit)",
-			version:     []byte("HTTP/34."),
+			version:     "HTTP/34.",
 			expectError: true,
 		},
 		{
 			name:        "Malformed version number (multiple decimal places)",
-			version:     []byte("HTTP/1.2.3"),
+			version:     "HTTP/1.2.3",
 			expectError: true,
 		},
 		{
 			name:        "Malformed version number (non-numeric first number)",
-			version:     []byte("HTTP/1f.0"),
+			version:     "HTTP/1f.0",
 			expectError: true,
 		},
 		{
 			name:        "Malformed version number (non-numeric second number)",
-			version:     []byte("HTTP/1.1e2"),
+			version:     "HTTP/1.1e2",
 			expectError: true,
 		},
 		{
 			name:        "Malformed version number (below 1.0)",
-			version:     []byte("HTTP/0.9"),
+			version:     "HTTP/0.9",
 			expectError: true,
 		},
 		{
 			name:        "Wrong protocol",
-			version:     []byte("REST/1.0"),
+			version:     "REST/1.0",
 			expectError: true,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			res, err := versionParser(tt.version).parse()
+			res, err := parseVersion(tt.version)
 
 			ok := assert.ErrorStatus(t, err, tt.expectError)
 			if !ok {
@@ -167,7 +167,7 @@ func TestVersionParser_parse(t *testing.T) {
 	}
 }
 
-func TestRequestHeaderParser_Parse(t *testing.T) {
+func TestParseRequestHeaders(t *testing.T) {
 	tests := []struct {
 		name        string
 		input       string
@@ -282,7 +282,7 @@ func TestRequestHeaderParser_Parse(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			res, err := requestHeadersParser(tt.input).Parse()
+			res, err := parseRequestHeaders([]byte(tt.input))
 
 			ok := assert.ErrorStatus(t, err, tt.expectError)
 			if !ok {
@@ -327,7 +327,7 @@ func TestRequestHeaderParser_Parse(t *testing.T) {
 	}
 }
 
-func TestHeaderSplitter_split(t *testing.T) {
+func TestSplitRequestHeaders(t *testing.T) {
 	tests := []struct {
 		name     string
 		headers  []byte
@@ -376,11 +376,11 @@ func TestHeaderSplitter_split(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		assert.MatrixEqual(t, headerSplitter(tt.headers).split(), tt.expected)
+		assert.MatrixEqual(t, splitRequestHeaders(tt.headers), tt.expected)
 	}
 }
 
-func TestHeaderNameValidator_validate(t *testing.T) {
+func TestValidateHeaderName(t *testing.T) {
 	tests := []struct {
 		name        string
 		token       string
@@ -415,13 +415,13 @@ func TestHeaderNameValidator_validate(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := headerNameValidator(tt.token).validate()
+			err := validateHeaderName(tt.token)
 			assert.ErrorStatus(t, err, tt.expectError)
 		})
 	}
 }
 
-func TestHeaderValueValidator_validate(t *testing.T) {
+func TestValidateHeaderValue(t *testing.T) {
 	tests := []struct {
 		name        string
 		value       string
@@ -466,13 +466,13 @@ func TestHeaderValueValidator_validate(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := headerValueValidator(tt.value).validate()
+			err := validateHeaderValue(tt.value)
 			assert.ErrorStatus(t, err, tt.expectError)
 		})
 	}
 }
 
-func TestPragmaHeaderParser_parse(t *testing.T) {
+func TestParsePragmaDirectives(t *testing.T) {
 	tests := []struct {
 		name        string
 		pragmaVal   string
@@ -539,7 +539,7 @@ func TestPragmaHeaderParser_parse(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			res, err := pragmaHeaderParser(tt.pragmaVal).parse()
+			res, err := parsePragmaDirectives(tt.pragmaVal)
 
 			ok := assert.ErrorStatus(t, err, tt.expectError)
 			if !ok {
@@ -552,7 +552,7 @@ func TestPragmaHeaderParser_parse(t *testing.T) {
 	}
 }
 
-func TestAuthorizationHeaderSplitter_split(t *testing.T) {
+func TestSplitAuthorizationHeader(t *testing.T) {
 	tests := []struct {
 		name     string
 		value    string
@@ -587,12 +587,12 @@ func TestAuthorizationHeaderSplitter_split(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			assert.SliceEqual(t, authorizationHeaderSplitter(tt.value).split(), tt.expected)
+			assert.SliceEqual(t, splitAuthorizationCredentials(tt.value), tt.expected)
 		})
 	}
 }
 
-func TestAuthorizationHeaderParser_parse(t *testing.T) {
+func TestParseAuthorizationCredentials(t *testing.T) {
 	tests := []struct {
 		name        string
 		value       string
@@ -654,7 +654,7 @@ func TestAuthorizationHeaderParser_parse(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			res, err := authorizationHeaderParser(tt.value).parse()
+			res, err := parseAuthorizationCredentials(tt.value)
 
 			ok := assert.ErrorStatus(t, err, tt.expectError)
 			if !ok {
@@ -887,7 +887,7 @@ func TestRequestHeaders_setFrom(t *testing.T) {
 	}
 }
 
-func TestCommentExtractor_extract(t *testing.T) {
+func TestExtractComment(t *testing.T) {
 	tests := []struct {
 		name            string
 		tokens          string
@@ -952,7 +952,7 @@ func TestCommentExtractor_extract(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			c, next, err := commentExtractor(tt.tokens).extract(tt.index)
+			c, next, err := extractComment(tt.tokens, tt.index)
 
 			ok := assert.ErrorStatus(t, err, tt.expectError)
 			if !ok {
@@ -965,7 +965,7 @@ func TestCommentExtractor_extract(t *testing.T) {
 	}
 }
 
-func TestProductVersionExtractor_extract(t *testing.T) {
+func TestExtractProductVersion(t *testing.T) {
 	tests := []struct {
 		name                 string
 		tokens               string
@@ -1019,14 +1019,14 @@ func TestProductVersionExtractor_extract(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			c, next := productVersionExtractor(tt.tokens).extract(tt.index)
+			c, next := extractProductVersion(tt.tokens, tt.index)
 			assert.Equal(t, c, tt.expectedProductToken)
 			assert.Equal(t, next, tt.expectedNext)
 		})
 	}
 }
 
-func TestProductVersionParser_parse(t *testing.T) {
+func TestParseProductVersion(t *testing.T) {
 	tests := []struct {
 		name         string
 		productToken string
@@ -1073,7 +1073,7 @@ func TestProductVersionParser_parse(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			res, err := productVersionParser(tt.productToken).parse()
+			res, err := parseProductVersion(tt.productToken)
 
 			ok := assert.ErrorStatus(t, err, tt.expectError)
 			if !ok {
@@ -1563,7 +1563,7 @@ func TestRequestHeaders_setUnrecognized(t *testing.T) {
 	}
 }
 
-func TestContentTypeParametersParser_parse(t *testing.T) {
+func TestParseContentTypeParameters(t *testing.T) {
 	tests := []struct {
 		name        string
 		parameters  string
@@ -1676,7 +1676,7 @@ func TestContentTypeParametersParser_parse(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			res, err := contentTypeParametersParser(tt.parameters).parse()
+			res, err := parseContentTypeParameters(tt.parameters)
 
 			ok := assert.ErrorStatus(t, err, tt.expectError)
 			if !ok {
@@ -1688,7 +1688,7 @@ func TestContentTypeParametersParser_parse(t *testing.T) {
 	}
 }
 
-func TestContentTypeParser_parse(t *testing.T) {
+func TestParseContentType(t *testing.T) {
 	tests := []struct {
 		name        string
 		contentType string
@@ -1782,7 +1782,7 @@ func TestContentTypeParser_parse(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			res, err := contentTypeParser(tt.contentType).parse()
+			res, err := parseContentType(tt.contentType)
 
 			ok := assert.ErrorStatus(t, err, tt.expectError)
 			if !ok {
@@ -1796,7 +1796,7 @@ func TestContentTypeParser_parse(t *testing.T) {
 	}
 }
 
-func TestRequestBodyParser_parse(t *testing.T) {
+func TestParseRequestBody(t *testing.T) {
 	gzip, err := base64.StdEncoding.DecodeString("H4sIAAAAAAAAA/JIzcnJ11EIzy/KSVEEAAAA//8DANDDSuwNAAAA")
 	if err != nil {
 		t.Fatalf("Test could not complete! (%s)", err.Error())
@@ -1811,7 +1811,7 @@ func TestRequestBodyParser_parse(t *testing.T) {
 	tests := []struct {
 		name        string
 		headers     RequestHeaders
-		body        requestBodyParser
+		body        []byte
 		expected    []byte
 		expectError bool
 	}{
@@ -1821,7 +1821,7 @@ func TestRequestBodyParser_parse(t *testing.T) {
 				ContentEncoding: "",
 				ContentLength:   13,
 			},
-			body:        requestBodyParser([]byte("Hello, world!")),
+			body:        []byte("Hello, world!"),
 			expected:    []byte("Hello, world!"),
 			expectError: false,
 		},
@@ -1831,7 +1831,7 @@ func TestRequestBodyParser_parse(t *testing.T) {
 				ContentEncoding: "",
 				ContentLength:   0,
 			},
-			body:        requestBodyParser([]byte("")),
+			body:        []byte(""),
 			expected:    []byte(""),
 			expectError: false,
 		},
@@ -1841,7 +1841,7 @@ func TestRequestBodyParser_parse(t *testing.T) {
 				ContentEncoding: "",
 				ContentLength:   10,
 			},
-			body:        requestBodyParser([]byte("abc")),
+			body:        []byte("abc"),
 			expectError: true,
 		},
 		{
@@ -1850,7 +1850,7 @@ func TestRequestBodyParser_parse(t *testing.T) {
 				ContentEncoding: "x-gzip",
 				ContentLength:   ContentLength(len(gzip)),
 			},
-			body:        requestBodyParser(gzip),
+			body:        gzip,
 			expected:    []byte("Hello, World!"),
 			expectError: false,
 		},
@@ -1860,7 +1860,7 @@ func TestRequestBodyParser_parse(t *testing.T) {
 				ContentEncoding: "gzip",
 				ContentLength:   ContentLength(len(gzip)),
 			},
-			body:        requestBodyParser(gzip),
+			body:        gzip,
 			expected:    []byte("Hello, World!"),
 			expectError: false,
 		},
@@ -1870,7 +1870,7 @@ func TestRequestBodyParser_parse(t *testing.T) {
 				ContentEncoding: "x-compress",
 				ContentLength:   ContentLength(len(compress)),
 			},
-			body:        requestBodyParser(compress),
+			body:        compress,
 			expected:    []byte("Hello, World!"),
 			expectError: false,
 		},
@@ -1880,7 +1880,7 @@ func TestRequestBodyParser_parse(t *testing.T) {
 				ContentEncoding: "compress",
 				ContentLength:   ContentLength(len(compress)),
 			},
-			body:        requestBodyParser(compress),
+			body:        compress,
 			expected:    []byte("Hello, World!"),
 			expectError: false,
 		},
@@ -1888,7 +1888,7 @@ func TestRequestBodyParser_parse(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			res, err := tt.body.parse(tt.headers)
+			res, err := parseRequestBody(tt.body, tt.headers)
 
 			ok := assert.ErrorStatus(t, err, tt.expectError)
 			if !ok {

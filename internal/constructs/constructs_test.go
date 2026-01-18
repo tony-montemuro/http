@@ -599,7 +599,7 @@ func TestHttpByte_IsTSpecial(t *testing.T) {
 	}
 }
 
-func TestToken_Validate(t *testing.T) {
+func TestValidateToken(t *testing.T) {
 	tests := []validateCheck{
 		{
 			name:        "Standard token (abc!123)",
@@ -630,13 +630,13 @@ func TestToken_Validate(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := Token(tt.string).Validate()
+			err := ValidateToken(tt.string)
 			assert.ErrorStatus(t, err, tt.expectError)
 		})
 	}
 }
 
-func TestQuotedString_validate(t *testing.T) {
+func TestValidateQuotedString(t *testing.T) {
 	tests := []validateCheck{
 		{
 			name:        "Standard quoted string (\"abc!123\")",
@@ -672,13 +672,13 @@ func TestQuotedString_validate(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := QuotedString(tt.string).validate()
+			err := validateQuotedString(tt.string)
 			assert.ErrorStatus(t, err, tt.expectError)
 		})
 	}
 }
 
-func TestQuotedString_Parse(t *testing.T) {
+func TestParseQuotedString(t *testing.T) {
 	tests := []parseCheck{
 		{
 			name:        "Standard quoted string (\"abc!123\")",
@@ -717,7 +717,7 @@ func TestQuotedString_Parse(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			res, err := QuotedString(tt.string).Parse()
+			res, err := ParseQuotedString(tt.string)
 
 			ok := assert.ErrorStatus(t, err, tt.expectError)
 			if !ok {
@@ -729,69 +729,7 @@ func TestQuotedString_Parse(t *testing.T) {
 	}
 }
 
-func TestWord_Validate(t *testing.T) {
-	tests := []validateCheck{
-		{
-			name:        "Standard token (abc!123)",
-			string:      "abc!123",
-			expectError: false,
-		},
-		{
-			name:        "String with control characters (def\n456)",
-			string:      "def\n456",
-			expectError: true,
-		},
-		{
-			name:        "String with extended ASCII characters (ghi[200]789)",
-			string:      string([]byte{'g', 'h', 'i', 200, '7', '8', '9'}),
-			expectError: true,
-		},
-		{
-			name:        "String with TSpecial characters (jkl\\098)",
-			string:      "jkl\\098",
-			expectError: true,
-		},
-		{
-			name:        "Standard quoted string (\"abc!123\")",
-			string:      "\"abc!123\"",
-			expectError: false,
-		},
-		{
-			name:        "Quoted string with whitespace (\"d\t\t\tef \t45 6\")",
-			string:      "\"d\t\t\tef \t45 6\"",
-			expectError: false,
-		},
-		{
-			name:        "Quoted string with trailing whitespace (\"foobar\t\t\t\t\t\t    \t \")",
-			string:      "\"foobar\t\t\t\t\t\t    \t \"",
-			expectError: false,
-		},
-		{
-			name:        "Quote string with internal double quote (\"this is b\"ad!\")",
-			string:      "\"this is b\"ad!\"",
-			expectError: true,
-		},
-		{
-			name:        "Empty string",
-			string:      "",
-			expectError: true,
-		},
-		{
-			name:        "Single double quote (\")",
-			string:      "\"",
-			expectError: true,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			err := Word(tt.string).Validate()
-			assert.ErrorStatus(t, err, tt.expectError)
-		})
-	}
-}
-
-func TestWord_Parse(t *testing.T) {
+func TestParseWord(t *testing.T) {
 	tests := []parseCheck{
 		{
 			name:        "Standard token (abc!123)",
@@ -851,7 +789,7 @@ func TestWord_Parse(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			res, err := Word(tt.string).Parse()
+			res, err := ParseWord(tt.string)
 
 			ok := assert.ErrorStatus(t, err, tt.expectError)
 			if !ok {
@@ -911,7 +849,7 @@ func TestHex_Value(t *testing.T) {
 	}
 }
 
-func TestText_Validate(t *testing.T) {
+func TestValidateText(t *testing.T) {
 	tests := []validateCheck{
 		{
 			name:        "Generic text",
@@ -947,13 +885,13 @@ func TestText_Validate(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := Text(tt.string).Validate()
+			err := ValidateText(tt.string)
 			assert.ErrorStatus(t, err, tt.expectError)
 		})
 	}
 }
 
-func TestDate_Parse(t *testing.T) {
+func TestParseDate(t *testing.T) {
 	tests := []struct {
 		name        string
 		dateVal     string
@@ -1000,7 +938,7 @@ func TestDate_Parse(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			res, err := Date(tt.dateVal).Parse()
+			res, err := ParseDate(tt.dateVal)
 
 			ok := assert.ErrorStatus(t, err, tt.expectError)
 			if !ok {
@@ -1012,7 +950,7 @@ func TestDate_Parse(t *testing.T) {
 	}
 }
 
-func TestComment_Validate(t *testing.T) {
+func TestValidateComment(t *testing.T) {
 	tests := []validateCheck{
 		{
 			name:        "Empty comment",
@@ -1073,13 +1011,13 @@ func TestComment_Validate(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := Comment(tt.string).Validate()
+			err := ValidateComment(tt.string)
 			assert.ErrorStatus(t, err, tt.expectError)
 		})
 	}
 }
 
-func TestScheme_Validate(t *testing.T) {
+func TestValidateScheme(t *testing.T) {
 	tests := []validateCheck{
 		{
 			name:        "Standard scheme",
@@ -1105,7 +1043,7 @@ func TestScheme_Validate(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := Scheme(tt.string).Validate()
+			err := ValidateScheme(tt.string)
 			assert.ErrorStatus(t, err, tt.expectError)
 		})
 	}

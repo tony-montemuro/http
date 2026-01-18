@@ -77,7 +77,7 @@ func (p *RequestParser) Parse() (*Request, error) {
 		return nil, fmt.Errorf("malformed header suffix")
 	}
 
-	line, err := requestLineParser(bytes.Trim(lineBuf, constructs.Crlf)).parse()
+	line, err := parseRequestLine(bytes.Trim(lineBuf, constructs.Crlf))
 	if err != nil {
 		return nil, err
 	}
@@ -95,7 +95,7 @@ func (p *RequestParser) Parse() (*Request, error) {
 		headerBuf.WriteString(line)
 	}
 
-	headers, err := requestHeadersParser(bytes.Trim(headerBuf.Bytes(), constructs.Crlf)).Parse()
+	headers, err := parseRequestHeaders(bytes.Trim(headerBuf.Bytes(), constructs.Crlf))
 	if err != nil {
 		return nil, err
 	}
@@ -106,7 +106,7 @@ func (p *RequestParser) Parse() (*Request, error) {
 		return nil, err
 	}
 
-	body, err := requestBodyParser(bodyBytes).parse(headers)
+	body, err := parseRequestBody(bodyBytes, headers)
 	if err != nil {
 		return nil, err
 	}

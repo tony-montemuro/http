@@ -16,12 +16,10 @@ import (
 	"github.com/tony-montemuro/http/internal/rules"
 )
 
-type requestLineParser []byte
-
-func (rl requestLineParser) parse() (RequestLine, error) {
-	parts := bytes.Split(rl, []byte(" "))
+func parseRequestLine(data []byte) (RequestLine, error) {
+	parts := bytes.Split(data, []byte(" "))
 	if len(parts) != 3 {
-		return RequestLine{}, ClientError{message: fmt.Sprintf("Invalid request line: malformed request line (%s)", string(rl))}
+		return RequestLine{}, ClientError{message: fmt.Sprintf("Invalid request line: malformed request line (%s)", data)}
 	}
 
 	m := Method(parts[0])
@@ -39,7 +37,7 @@ func (rl requestLineParser) parse() (RequestLine, error) {
 		return RequestLine{}, fmt.Errorf("Invalid request line: issue with uri (uri must be in the form of an absolute path)")
 	}
 
-	version, err := versionParser(parts[2]).parse()
+	version, err := parseVersion(string(parts[2]))
 	if err != nil {
 		return RequestLine{}, ClientError{message: fmt.Sprintf("Invalid request line: issue with version (%s)", version)}
 	}
@@ -47,44 +45,40 @@ func (rl requestLineParser) parse() (RequestLine, error) {
 	return RequestLine{Method: m, Uri: uri, Version: version}, nil
 }
 
-type versionParser string
-
-func (v versionParser) parse() (string, error) {
-	if len(v) < 8 {
-		return string(v), fmt.Errorf("incomplete version (%s)", v)
+func parseVersion(data string) (string, error) {
+	if len(data) < 8 {
+		return data, fmt.Errorf("incomplete version (%s)", data)
 	}
 
-	data := strings.Split(string(v), string(constructs.ByteSeparator))
-	if len(data) != 2 || !strings.Contains(data[1], ".") {
-		return string(v), fmt.Errorf("could not determine version number (%s)", v)
+	parts := strings.Split(data, string(constructs.ByteSeparator))
+	if len(parts) != 2 || !strings.Contains(parts[1], ".") {
+		return data, fmt.Errorf("could not determine version number (%s)", data)
 	}
 
-	if data[0] != "HTTP" {
-		return string(v), fmt.Errorf("wrong protocol (%s)", data[0])
+	if parts[0] != "HTTP" {
+		return data, fmt.Errorf("wrong protocol (%s)", parts[0])
 	}
 
-	digits := strings.Split(data[1], ".")
+	digits := strings.Split(parts[1], ".")
 	if len(digits) != 2 {
-		return string(v), fmt.Errorf("malformed version number (%s)", data[1])
+		return data, fmt.Errorf("malformed version number (%s)", parts[1])
 	}
 
 	d1, err1 := strconv.Atoi(string(digits[0]))
 	_, err2 := strconv.Atoi(string(digits[1]))
 	if err1 != nil || err2 != nil {
-		return string(v), fmt.Errorf("contains invalid characters (%s)", v)
+		return data, fmt.Errorf("contains invalid characters (%s)", data)
 	}
 	if d1 == 0 {
-		return string(v), fmt.Errorf("must be at least 1.0 (%s)", v)
+		return data, fmt.Errorf("must be at least 1.0 (%s)", data)
 	}
 
-	return data[1], nil
+	return parts[1], nil
 }
 
-type requestHeadersParser []byte
-
-func (rh requestHeadersParser) Parse() (RequestHeaders, error) {
+func parseRequestHeaders(data []byte) (RequestHeaders, error) {
 	headers := RequestHeaders{}
-	parts := headerSplitter(rh).split()
+	parts := splitRequestHeaders(data)
 
 	for _, header := range parts {
 		parts := bytes.SplitN(header, []byte(":"), 2)
@@ -93,13 +87,13 @@ func (rh requestHeadersParser) Parse() (RequestHeaders, error) {
 		}
 
 		name := lws.TrimRight(string(parts[0]))
-		err := headerNameValidator(name).validate()
+		err := validateHeaderName(name)
 		if err != nil {
 			return headers, ClientError{message: fmt.Sprintf("Invalid header: %s", err.Error())}
 		}
 
 		value := lws.TrimLeft(string(parts[1]))
-		err = headerValueValidator(value).validate()
+		err = validateHeaderValue(value)
 		if err != nil {
 			return headers, fmt.Errorf("Invalid header: (%s)", err.Error())
 		}
@@ -113,63 +107,58 @@ func (rh requestHeadersParser) Parse() (RequestHeaders, error) {
 	return headers, nil
 }
 
-type headerSplitter []byte
-
-func (d headerSplitter) split() [][]byte {
+func splitRequestHeaders(data []byte) [][]byte {
 	parts := [][]byte{}
 	start := 0
-	nextCrlf := bytes.Index(d, []byte(constructs.Crlf))
+	nextCrlf := bytes.Index(data, []byte(constructs.Crlf))
 	end := nextCrlf
 
 	for nextCrlf != -1 {
-		isLws, _ := lws.Check(string(d), end)
+		isLws, _ := lws.Check(string(data), end)
 		if !isLws {
-			parts = append(parts, d[start:end])
+			parts = append(parts, data[start:end])
 			start = end + len(constructs.Crlf)
-			nextCrlf = bytes.Index(d[start:], []byte(constructs.Crlf))
+			nextCrlf = bytes.Index(data[start:], []byte(constructs.Crlf))
 			end = start
 		} else {
-			nextCrlf = bytes.Index(d[end+len(constructs.Crlf):], []byte(constructs.Crlf))
+			nextCrlf = bytes.Index(data[end+len(constructs.Crlf):], []byte(constructs.Crlf))
 			end += len(constructs.Crlf)
 		}
 
 		end += nextCrlf
 	}
 
-	last := d[start:]
+	last := data[start:]
 	if len(last) > 0 {
-		parts = append(parts, d[start:])
+		parts = append(parts, data[start:])
 	}
 	return parts
 }
 
-type headerNameValidator string
-
-func (hn headerNameValidator) validate() error {
-	return constructs.Token(hn).Validate()
+func validateHeaderName(data string) error {
+	return constructs.ValidateToken(data)
 }
 
-type headerValueValidator string
-
-func (hv headerValueValidator) validate() error {
+func validateHeaderValue(data string) error {
 	i := 0
 
-	for i < len(hv) {
-		isLws, next := lws.Check(string(hv), i)
+	for i < len(data) {
+		isLws, next := lws.Check(data, i)
 
 		if isLws {
 			i = next
 			continue
 		}
 
-		if constructs.HttpByte(hv[i]).IsControl() {
-			return fmt.Errorf("header value contains invalid control characters (%s)", hv)
+		if constructs.HttpByte(data[i]).IsControl() {
+			return fmt.Errorf("header value contains invalid control characters (%s)", data)
 		}
 
 		i++
 	}
 
 	return nil
+
 }
 
 func (rh *RequestHeaders) setHeader(name, value string) error {
@@ -218,7 +207,7 @@ func (rh *RequestHeaders) setHeader(name, value string) error {
 }
 
 func (rh *RequestHeaders) setDate(data string) error {
-	date, err := constructs.Date(data).Parse()
+	date, err := constructs.ParseDate(data)
 	if err != nil {
 		return fmt.Errorf("Invalid date header: %s", err.Error())
 	}
@@ -228,7 +217,7 @@ func (rh *RequestHeaders) setDate(data string) error {
 }
 
 func (rh *RequestHeaders) setPragma(data string) error {
-	pragma, err := pragmaHeaderParser(data).parse()
+	pragma, err := parsePragmaDirectives(data)
 	if err != nil {
 		return fmt.Errorf("Invalid pragma header: %s", err.Error())
 	}
@@ -237,18 +226,16 @@ func (rh *RequestHeaders) setPragma(data string) error {
 	return nil
 }
 
-type pragmaHeaderParser string
-
-func (p pragmaHeaderParser) parse() (PragmaDirectives, error) {
+func parsePragmaDirectives(data string) (PragmaDirectives, error) {
 	directives := PragmaDirectives{Options: make(map[string]string)}
-	parts := rules.Extractor(p).Extract()
+	parts := rules.Extract(data)
 	if len(parts) == 0 {
-		return directives, fmt.Errorf("at least one pragma directive is required (%s)", p)
+		return directives, fmt.Errorf("at least one pragma directive is required (%s)", data)
 	}
 
 	for _, part := range parts {
 		values := strings.SplitN(part, "=", 2)
-		err := constructs.Token(values[0]).Validate()
+		err := constructs.ValidateToken(values[0])
 		if err != nil {
 			return directives, fmt.Errorf("pragma directive must be prepended with token: %s", part)
 		}
@@ -261,7 +248,7 @@ func (p pragmaHeaderParser) parse() (PragmaDirectives, error) {
 				return directives, fmt.Errorf("pragma directive 'no-cache' value cannot have a value (%s)", part)
 			}
 
-			w, err := constructs.Word(value).Parse()
+			w, err := constructs.ParseWord(value)
 			if err != nil {
 				return directives, fmt.Errorf("pragma directive value must be a word: %s", part)
 			}
@@ -273,6 +260,7 @@ func (p pragmaHeaderParser) parse() (PragmaDirectives, error) {
 	}
 
 	return directives, nil
+
 }
 
 func (rh *RequestHeaders) setReferer(data string) error {
@@ -286,7 +274,7 @@ func (rh *RequestHeaders) setReferer(data string) error {
 }
 
 func (rh *RequestHeaders) setAuthorization(data string) error {
-	authorization, err := authorizationHeaderParser(data).parse()
+	authorization, err := parseAuthorizationCredentials(data)
 	if err != nil {
 		return fmt.Errorf("Invalid Authorization header: %s", err.Error())
 	}
@@ -295,16 +283,14 @@ func (rh *RequestHeaders) setAuthorization(data string) error {
 	return nil
 }
 
-type authorizationHeaderParser string
-
-func (a authorizationHeaderParser) parse() (AuthorizationCredentials, error) {
+func parseAuthorizationCredentials(data string) (AuthorizationCredentials, error) {
 	credentials := AuthorizationCredentials{}
-	parts := authorizationHeaderSplitter(a).split()
+	parts := splitAuthorizationCredentials(data)
 
 	scheme := lws.TrimRight(parts[0])
-	err := constructs.Token(scheme).Validate()
+	err := constructs.ValidateToken(scheme)
 	if err != nil {
-		return credentials, fmt.Errorf("malformed Authorization scheme (%s)", a)
+		return credentials, fmt.Errorf("malformed Authorization scheme (%s)", data)
 	}
 	credentials.Scheme = scheme
 
@@ -312,13 +298,11 @@ func (a authorizationHeaderParser) parse() (AuthorizationCredentials, error) {
 	return credentials, err
 }
 
-type authorizationHeaderSplitter string
-
-func (a authorizationHeaderSplitter) split() []string {
+func splitAuthorizationCredentials(data string) []string {
 	i := 0
 
-	for i < len(a) && !constructs.HttpByte(a[i]).IsTSpecial() {
-		isNewLineLws, next, _ := lws.NewLine(string(a), i)
+	for i < len(data) && !constructs.HttpByte(data[i]).IsTSpecial() {
+		isNewLineLws, next, _ := lws.NewLine(string(data), i)
 		if isNewLineLws {
 			i = next
 		} else {
@@ -326,7 +310,7 @@ func (a authorizationHeaderSplitter) split() []string {
 		}
 	}
 
-	return []string{string(a[:i]), string(a[min(len(a), i+1):])}
+	return []string{string(data[:i]), string(data[min(len(data), i+1):])}
 }
 
 func (ac *AuthorizationCredentials) setParams(data string) error {
@@ -337,19 +321,19 @@ func (ac *AuthorizationCredentials) setParams(data string) error {
 		return err
 	}
 
-	for i, param := range rules.Extractor(data).Extract() {
+	for i, param := range rules.Extract(data) {
 		parts := strings.SplitN(param, "=", 2)
 		if len(parts) != 2 {
 			return fmt.Errorf("invalid auth parameter (param %d [%s])", i, data)
 		}
 
 		key := parts[0]
-		err := constructs.Token(key).Validate()
+		err := constructs.ValidateToken(key)
 		if err != nil {
 			return fmt.Errorf("invalid auth parameter (param %d [%s])", i, data)
 		}
 
-		val, err := constructs.QuotedString(parts[1]).Parse()
+		val, err := constructs.ParseQuotedString(parts[1])
 		if err != nil {
 			return fmt.Errorf("invalid auth parameter (param %d [%s])", i, data)
 		}
@@ -373,13 +357,13 @@ func (ac *AuthorizationCredentials) setBasicSchemeParams(data string) error {
 	}
 
 	userid := parts[0]
-	err = constructs.Token(userid).Validate()
+	err = constructs.ValidateToken(userid)
 	if err != nil && len(userid) > 0 {
 		return fmt.Errorf("invalid credentials")
 	}
 
 	password := parts[1]
-	err = constructs.Text(password).Validate()
+	err = constructs.ValidateText(password)
 	if err != nil {
 		return fmt.Errorf("invalid credentials")
 	}
@@ -403,7 +387,7 @@ func (rh *RequestHeaders) setFrom(data string) error {
 }
 
 func (rh *RequestHeaders) setIfModifiedSince(data string) error {
-	date, err := constructs.Date(data).Parse()
+	date, err := constructs.ParseDate(data)
 	if err != nil {
 		return fmt.Errorf("Invalid If-Modified-Since header: %s", err.Error())
 	}
@@ -419,12 +403,12 @@ func (rh *RequestHeaders) setUserAgent(data string) error {
 
 	for i < len(data) {
 		if data[i] == '(' {
-			c, next, err := commentExtractor(data).extract(i)
+			c, next, err := extractComment(data, i)
 			if err != nil {
 				return fmt.Errorf("Invalid User-Agent header: bad comment - %s", err.Error())
 			}
 
-			err = constructs.Comment(c).Validate()
+			err = constructs.ValidateComment(c)
 			if err != nil {
 				return fmt.Errorf("Invalid User-Agent header: bad comment - %s", err.Error())
 			}
@@ -433,8 +417,8 @@ func (rh *RequestHeaders) setUserAgent(data string) error {
 			i = next
 
 		} else {
-			token, next := productVersionExtractor(data).extract(i)
-			product, err := productVersionParser(token).parse()
+			token, next := extractProductVersion(data, i)
+			product, err := parseProductVersion(token)
 			if err != nil {
 				return fmt.Errorf("Invalid User-Agent header: bad product token - %s", err.Error())
 			}
@@ -448,94 +432,91 @@ func (rh *RequestHeaders) setUserAgent(data string) error {
 	return nil
 }
 
-type commentExtractor string
-
-func (e commentExtractor) extract(start int) (string, int, error) {
-	if e[start] != '(' {
-		return "", 0, fmt.Errorf("comment must begin with open parenthesis (%s)", e)
+func extractComment(data string, start int) (string, int, error) {
+	if data[start] != '(' {
+		return "", 0, fmt.Errorf("comment must begin with open parenthesis (%s)", data)
 	}
 
 	score := 1
 	i := start + 1
-	for i < len(e) && score > 0 {
-		if e[i] == '(' {
+	for i < len(data) && score > 0 {
+		if data[i] == '(' {
 			score++
 		}
-		if e[i] == ')' {
+		if data[i] == ')' {
 			score--
 		}
 		i++
 	}
 
 	if score > 0 {
-		return "", 0, fmt.Errorf("comment not properly closed (%s)", e)
+		return "", 0, fmt.Errorf("comment not properly closed (%s)", data)
 	}
 
-	comment := string(e[start:i])
-	isLws, next := lws.Check(string(e), i)
+	comment := string(data[start:i])
+	isLws, next := lws.Check(data, i)
 	for isLws {
 		i = next
-		isLws, next = lws.Check(string(e), i)
+		isLws, next = lws.Check(data, i)
 	}
 
 	return comment, i, nil
+
 }
 
-type productVersionExtractor string
-
-func (e productVersionExtractor) extract(start int) (string, int) {
+func extractProductVersion(data string, start int) (string, int) {
 	i := start
-	isLws, next := lws.Check(string(e), i)
+	isLws, next := lws.Check(data, i)
 
-	for i < len(e) && e[i] != '(' && !isLws {
+	for i < len(data) && data[i] != '(' && !isLws {
 		i++
-		isLws, next = lws.Check(string(e), i)
+		isLws, next = lws.Check(data, i)
 	}
 
-	productToken := string(e[start:i])
+	productToken := string(data[start:i])
 	for isLws {
 		i = next
-		isLws, next = lws.Check(string(e), i)
+		isLws, next = lws.Check(data, i)
 	}
 
 	return productToken, i
+
 }
 
-type productVersionParser string
-
-func (p productVersionParser) parse() (ProductVersion, error) {
+func parseProductVersion(data string) (ProductVersion, error) {
 	product := ProductVersion{}
-	parts := strings.Split(string(p), "/")
+	parts := strings.Split(data, "/")
 	if len(parts) > 2 {
-		return product, fmt.Errorf("product token can only contain up to 1 forward slash (%s)", p)
+		return product, fmt.Errorf("product token can only contain up to 1 forward slash (%s)", data)
 	}
 
-	err := constructs.Token(parts[0]).Validate()
+	err := constructs.ValidateToken(parts[0])
 	if err != nil {
-		return product, fmt.Errorf("invalid product token (%s)", p)
+		return product, fmt.Errorf("invalid product token (%s)", data)
 	}
 	product.Product = parts[0]
 
 	if len(parts) == 2 {
-		err := constructs.Token(parts[1]).Validate()
+		err := constructs.ValidateToken(parts[1])
 		if err != nil {
-			return product, fmt.Errorf("invalid product token (%s)", p)
+			return product, fmt.Errorf("invalid product token (%s)", data)
 		}
 		product.Version = parts[1]
 	}
 
 	return product, nil
+
 }
 
 func (rh *RequestHeaders) setAllow(data string) error {
 	var methods []Method
-	rules := rules.Extractor(data).Extract()
+	rules := rules.Extract(data)
 	if len(rules) == 0 {
 		return fmt.Errorf("Invalid Allow header: must include at least one method (%s)", data)
 	}
 
 	for _, m := range rules {
-		err := constructs.Token(m).Validate()
+		err := constructs.ValidateToken(m)
 
 		if err != nil {
 			return fmt.Errorf("Invalid Allow header: includes unsupported methods (%s)", data)
@@ -550,7 +531,7 @@ func (rh *RequestHeaders) setAllow(data string) error {
 
 func (rh *RequestHeaders) setContentEncoding(data string) error {
 	var encoding ContentEncoding
-	err := constructs.Token(data).Validate()
+	err := constructs.ValidateToken(data)
 	if err != nil {
 		return fmt.Errorf("Invalid Content-Encoding header: malformed value (%s)", data)
 	}
@@ -578,7 +559,7 @@ func (rh *RequestHeaders) setContentLength(data string) error {
 }
 
 func (rh *RequestHeaders) setContentType(data string) error {
-	contentType, err := contentTypeParser(data).parse()
+	contentType, err := parseContentType(data)
 	if err != nil {
 		return fmt.Errorf("Invalid Content-Type header: %s", err.Error())
 	}
@@ -587,31 +568,29 @@ func (rh *RequestHeaders) setContentType(data string) error {
 	return nil
 }
 
-type contentTypeParser string
-
-func (ct contentTypeParser) parse() (ContentType, error) {
+func parseContentType(data string) (ContentType, error) {
 	contentType := ContentType{}
-	parts := strings.SplitN(string(ct), ";", 2)
+	parts := strings.SplitN(data, ";", 2)
 
 	mediaType := strings.Split(lws.Trim(parts[0]), "/")
 	if len(mediaType) != 2 {
-		return contentType, fmt.Errorf("malformed media type header (%s)", ct)
+		return contentType, fmt.Errorf("malformed media type header (%s)", data)
 	}
 
-	err := constructs.Token(mediaType[0]).Validate()
+	err := constructs.ValidateToken(mediaType[0])
 	if err != nil {
-		return contentType, fmt.Errorf("malformed media type (%s)", ct)
+		return contentType, fmt.Errorf("malformed media type (%s)", data)
 	}
 	contentType.Type = mediaType[0]
 
-	err = constructs.Token(mediaType[1]).Validate()
+	err = constructs.ValidateToken(mediaType[1])
 	if err != nil {
-		return contentType, fmt.Errorf("malformed media subtype (%s)", ct)
+		return contentType, fmt.Errorf("malformed media subtype (%s)", data)
 	}
 	contentType.Subtype = mediaType[1]
 
 	if len(parts) == 2 {
-		params, err := contentTypeParametersParser(parts[1]).parse()
+		params, err := parseContentTypeParameters(parts[1])
 		if err != nil {
 			return contentType, err
 		}
@@ -619,71 +598,70 @@ func (ct contentTypeParser) parse() (ContentType, error) {
 	}
 
 	return contentType, nil
+
 }
 
-type contentTypeParametersParser string
-
-func (ctp contentTypeParametersParser) parse() (map[string]string, error) {
-	if len(ctp) == 0 {
-		return nil, fmt.Errorf("parameter cannot be empty (%s)", ctp)
+func parseContentTypeParameters(data string) (map[string]string, error) {
+	if len(data) == 0 {
+		return nil, fmt.Errorf("parameter cannot be empty (%s)", data)
 	}
 	parameters := make(map[string]string)
 
 	i := 0
-	for i < len(ctp) {
-		isLws, next := lws.Check(string(ctp), i)
+	for i < len(data) {
+		isLws, next := lws.Check(data, i)
 		for isLws {
 			i = next
-			isLws, next = lws.Check(string(ctp), i)
+			isLws, next = lws.Check(data, i)
 		}
 
 		attribute := []byte{}
-		for i < len(ctp) && ctp[i] != '=' {
-			attribute = append(attribute, ctp[i])
+		for i < len(data) && data[i] != '=' {
+			attribute = append(attribute, data[i])
 			i++
 		}
 
-		err := constructs.Token(attribute).Validate()
+		err := constructs.ValidateToken(string(attribute))
 		if err != nil {
-			return nil, fmt.Errorf("parameter attribute must be a token (%s)", ctp)
+			return nil, fmt.Errorf("parameter attribute must be a token (%s)", data)
 		}
 		i++
-		if i >= len(ctp) {
-			return nil, fmt.Errorf("parameter has no value (%s)", ctp)
+		if i >= len(data) {
+			return nil, fmt.Errorf("parameter has no value (%s)", data)
 		}
 
 		var value string
-		if ctp[i] == '"' {
-			v := []byte{ctp[i]}
+		if data[i] == '"' {
+			v := []byte{data[i]}
 			i++
-			for i < len(ctp) && ctp[i] != '"' {
-				v = append(v, ctp[i])
+			for i < len(data) && data[i] != '"' {
+				v = append(v, data[i])
 				i++
 			}
-			if i < len(ctp) {
-				v = append(v, ctp[i])
+			if i < len(data) {
+				v = append(v, data[i])
 				i++
 			}
 
-			value, err = constructs.QuotedString(v).Parse()
+			value, err = constructs.ParseQuotedString(string(v))
 			if err != nil {
 				return nil, err
 			}
 
-			isLws, next = lws.Check(string(ctp), i)
+			isLws, next = lws.Check(data, i)
 			for isLws {
 				i = next
-				isLws, next = lws.Check(string(ctp), i)
+				isLws, next = lws.Check(data, i)
 			}
 		} else {
 			v := []byte{}
-			for i < len(ctp) && ctp[i] != ';' {
-				v = append(v, ctp[i])
+			for i < len(data) && data[i] != ';' {
+				v = append(v, data[i])
 				i++
 			}
 
 			value = lws.TrimRight(string(v))
-			err := constructs.Token(value).Validate()
+			err := constructs.ValidateToken(value)
 			if err != nil {
 				return nil, err
 			}
@@ -694,10 +672,11 @@ func (ctp contentTypeParametersParser) parse() (map[string]string, error) {
 	}
 
 	return parameters, nil
+
 }
 
 func (rh *RequestHeaders) setExpires(data string) error {
-	expires, err := constructs.Date(data).Parse()
+	expires, err := constructs.ParseDate(data)
 	if err != nil {
 		return fmt.Errorf("Invalid Expires header: %s", err.Error())
 	}
@@ -708,7 +687,7 @@ func (rh *RequestHeaders) setExpires(data string) error {
 }
 
 func (rh *RequestHeaders) setLastModified(data string) error {
-	lastModified, err := constructs.Date(data).Parse()
+	lastModified, err := constructs.ParseDate(data)
 	if err != nil {
 		return fmt.Errorf("Invalid Last-Modified header: %s", err.Error())
 	}
@@ -718,7 +697,7 @@ func (rh *RequestHeaders) setLastModified(data string) error {
 }
 
 func (rh *RequestHeaders) setUnrecognized(name, data string) error {
-	err := constructs.Text(data).Validate()
+	err := constructs.ValidateText(data)
 	if err != nil {
 		return fmt.Errorf("Invalid %s header: %s", name, err.Error())
 	}
@@ -730,30 +709,26 @@ func (rh *RequestHeaders) setUnrecognized(name, data string) error {
 	return nil
 }
 
-type requestBodyParser []byte
-
-func (rb requestBodyParser) parse(rh RequestHeaders) ([]byte, error) {
+func parseRequestBody(data []byte, rh RequestHeaders) ([]byte, error) {
 	var body []byte
 	length := rh.ContentLength
 
-	if length > ContentLength(len(rb)) {
+	if length > ContentLength(len(data)) {
 		return body, ClientError{message: "Content-Length header exceeds body length"}
 	}
 
 	for i := range length {
-		body = append(body, rb[i])
+		body = append(body, data[i])
 	}
 
-	return requestBodyDecoder(body).decode(rh.ContentEncoding)
+	return decodeRequestBody(body, rh.ContentEncoding)
 }
 
-type requestBodyDecoder []byte
-
-func (d requestBodyDecoder) decode(encoding ContentEncoding) ([]byte, error) {
+func decodeRequestBody(body []byte, encoding ContentEncoding) ([]byte, error) {
 	var res []byte
 	var err error
 	fmt.Println()
-	reader := bytes.NewReader([]byte(d))
+	reader := bytes.NewReader(body)
 
 	switch encoding {
 	case ContentEncodingXGzip, ContentEncodingGZip:
