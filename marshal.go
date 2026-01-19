@@ -1,4 +1,4 @@
-package message
+package http
 
 import (
 	"bytes"
@@ -13,6 +13,19 @@ import (
 
 type marshaler interface {
 	marshal() []byte
+}
+
+func (r response) marshal() []byte {
+	var marshaled []byte
+
+	line := r.code.marshal()
+	marshaled = append(marshaled, line...)
+
+	headers := r.headers.marshal(len(r.body) > 0)
+	marshaled = append(marshaled, headers...)
+
+	marshaled = append(marshaled, r.body...)
+	return marshaled
 }
 
 func (c code) marshal() []byte {

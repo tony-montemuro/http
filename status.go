@@ -1,4 +1,4 @@
-package message
+package http
 
 const (
 	StatusOK                  = 200

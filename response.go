@@ -1,4 +1,4 @@
-package message
+package http
 
 type code int
 
@@ -40,15 +40,6 @@ type response struct {
 	body    responseBody
 }
 
-func (r response) Marshal() []byte {
-	var marshaled []byte
-
-	line := r.code.marshal()
-	marshaled = append(marshaled, line...)
-
-	headers := r.headers.marshal(len(r.body) > 0)
-	marshaled = append(marshaled, headers...)
-
-	marshaled = append(marshaled, r.body...)
-	return marshaled
+type ResponseWriter struct {
+	response response
 }
