@@ -45,7 +45,7 @@ type MessageTime struct {
 }
 
 type PragmaDirectives struct {
-	Flags   []string
+	Flags   map[string]bool
 	Options map[string]string
 }
 

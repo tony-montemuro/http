@@ -1,7 +1,10 @@
 package http
 
 import (
-	"fmt"
+	"bytes"
+	"compress/gzip"
+	"compress/lzw"
+	"io"
 	"testing"
 	"time"
 
@@ -50,7 +53,7 @@ func TestResponse_marshal(t *testing.T) {
 			response: response{
 				code: 204,
 				headers: responseHeaders{
-					Server: server{
+					server: server{
 						products: []ProductVersion{
 							{Product: "go"},
 						},
@@ -68,11 +71,11 @@ func TestResponse_marshal(t *testing.T) {
 			response: response{
 				code: 200,
 				headers: responseHeaders{
-					ContentType: ContentType{
+					contentType: ContentType{
 						Type:    "text",
 						Subtype: "plain",
 					},
-					ContentLength: 5,
+					contentLength: 5,
 				},
 				body: responseBody("hello"),
 			},
@@ -89,7 +92,7 @@ func TestResponse_marshal(t *testing.T) {
 			response: response{
 				code: 401,
 				headers: responseHeaders{
-					WwwAuthenticate: challenge{
+					wwwAuthenticate: challenge{
 						scheme: "Basic",
 						realm:  `"Restricted"`,
 					},
@@ -106,8 +109,8 @@ func TestResponse_marshal(t *testing.T) {
 			response: response{
 				code: 200,
 				headers: responseHeaders{
-					Date: MessageTime{date: t1},
-					Server: server{
+					date: MessageTime{date: t1},
+					server: server{
 						products: []ProductVersion{
 							{Product: "example", Version: "1.0"},
 						},
@@ -126,11 +129,11 @@ func TestResponse_marshal(t *testing.T) {
 			response: response{
 				code: 200,
 				headers: responseHeaders{
-					ContentType: ContentType{
+					contentType: ContentType{
 						Type:    "application",
 						Subtype: "octet-stream",
 					},
-					ContentLength: 4,
+					contentLength: 4,
 				},
 				body: responseBody([]byte{0x00, 0x01, 0x02, 0xFF}),
 			},
@@ -149,7 +152,7 @@ func TestResponse_marshal(t *testing.T) {
 			response: response{
 				code: 200,
 				headers: responseHeaders{
-					Unrecognized: map[string]string{
+					unrecognized: map[string]string{
 						"X-Test": "abc",
 					},
 				},
@@ -178,20 +181,20 @@ func TestResponse_marshal(t *testing.T) {
 			response: response{
 				code: 200,
 				headers: responseHeaders{
-					Date: MessageTime{date: t1},
-					Server: server{
+					date: MessageTime{date: t1},
+					server: server{
 						products: []ProductVersion{
 							{Product: "myserver", Version: "2.1"},
 						},
 					},
-					ContentType: ContentType{
+					contentType: ContentType{
 						Type:    "text",
 						Subtype: "html",
 						Parameters: map[string]string{
 							"charset": `"utf-8"`,
 						},
 					},
-					ContentLength: 13,
+					contentLength: 13,
 				},
 				body: responseBody("<h1>Hello</h1>"),
 			},
@@ -270,7 +273,7 @@ func TestResponseHeaders_marshal(t *testing.T) {
 		{
 			name: "Date only",
 			headers: responseHeaders{
-				Date: MessageTime{date: t1},
+				date: MessageTime{date: t1},
 			},
 			expected: []byte(
 				"Date: Tue, 02 Jan 2024 15:04:05 GMT\r\n" +
@@ -280,7 +283,7 @@ func TestResponseHeaders_marshal(t *testing.T) {
 		{
 			name: "Server only",
 			headers: responseHeaders{
-				Server: server{
+				server: server{
 					products: []ProductVersion{
 						{Product: "myserver", Version: "1.0"},
 					},
@@ -294,10 +297,10 @@ func TestResponseHeaders_marshal(t *testing.T) {
 		{
 			name: "Pragma and Content-Length",
 			headers: responseHeaders{
-				Pragma: PragmaDirectives{
-					Flags: []string{"no-cache"},
+				pragma: PragmaDirectives{
+					Flags: map[string]bool{"no-cache": true},
 				},
-				ContentLength: 123,
+				contentLength: 123,
 			},
 			hasBody: true,
 			expected: []byte(
@@ -309,7 +312,7 @@ func TestResponseHeaders_marshal(t *testing.T) {
 		{
 			name: "WWW-Authenticate only with body",
 			headers: responseHeaders{
-				WwwAuthenticate: challenge{
+				wwwAuthenticate: challenge{
 					scheme: "Basic",
 					realm:  `"Restricted"`,
 				},
@@ -324,7 +327,7 @@ func TestResponseHeaders_marshal(t *testing.T) {
 		{
 			name: "Allow header",
 			headers: responseHeaders{
-				Allow: Methods{
+				allow: Methods{
 					methods: []Method{"GET", "HEAD", "POST"},
 				},
 			},
@@ -336,7 +339,7 @@ func TestResponseHeaders_marshal(t *testing.T) {
 		{
 			name: "Content-Type with parameters and body",
 			headers: responseHeaders{
-				ContentType: ContentType{
+				contentType: ContentType{
 					Type:    "text",
 					Subtype: "html",
 					Parameters: map[string]string{
@@ -354,7 +357,7 @@ func TestResponseHeaders_marshal(t *testing.T) {
 		{
 			name: "Content-Encoding",
 			headers: responseHeaders{
-				ContentEncoding: "x-gzip",
+				contentEncoding: "x-gzip",
 			},
 			expected: []byte(
 				"Content-Encoding: x-gzip\r\n" +
@@ -364,8 +367,8 @@ func TestResponseHeaders_marshal(t *testing.T) {
 		{
 			name: "Expires and Last-Modified",
 			headers: responseHeaders{
-				Expires:      MessageTime{date: t2},
-				LastModified: MessageTime{date: t1},
+				expires:      MessageTime{date: t2},
+				lastModified: MessageTime{date: t1},
 			},
 			expected: []byte(
 				"Expires: Mon, 25 Dec 2023 00:00:00 GMT\r\n" +
@@ -376,8 +379,8 @@ func TestResponseHeaders_marshal(t *testing.T) {
 		{
 			name: "Unrecognized headers mixed with known",
 			headers: responseHeaders{
-				ContentLength: 42,
-				Unrecognized: map[string]string{
+				contentLength: 42,
+				unrecognized: map[string]string{
 					"X-Foo": "bar",
 					"X-Baz": "qux",
 				},
@@ -442,16 +445,20 @@ func TestPragmaDirectives_marshal(t *testing.T) {
 		{
 			name: "No cache",
 			marshaler: PragmaDirectives{
-				Flags: []string{"no-cache"},
+				Flags: map[string]bool{"no-cache": true},
 			},
 			expected: []byte("no-cache"),
 		},
 		{
 			name: "Multiple flags",
 			marshaler: PragmaDirectives{
-				Flags: []string{"no-cache", "foo", "bar"},
+				Flags: map[string]bool{
+					"no-cache": true,
+					"foo":      true,
+					"bar":      true,
+				},
 			},
-			expected: []byte("no-cache foo bar"),
+			expected: []byte("bar foo no-cache"),
 		},
 		{
 			name: "Options only",
@@ -466,7 +473,7 @@ func TestPragmaDirectives_marshal(t *testing.T) {
 		{
 			name: "Flags & options",
 			marshaler: PragmaDirectives{
-				Flags: []string{"no-cache"},
+				Flags: map[string]bool{"no-cache": true},
 				Options: map[string]string{
 					"ttl": "30",
 				},
@@ -646,7 +653,6 @@ func TestRelativeUri_marshal(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			res := tt.marshaler.marshal()
-			fmt.Println(string(res), string(tt.expected))
 			assert.SliceEqual(t, res, tt.expected)
 		})
 	}
@@ -911,6 +917,108 @@ func TestContentType_marshal(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			res := tt.marshaler.marshal()
 			assert.SliceEqual(t, res, tt.expected)
+		})
+	}
+}
+
+func TestEncodeRequestBody(t *testing.T) {
+	// gzip1, err := base64.StdEncoding.DecodeString("")
+	// if err != nil {
+	// 	t.Fatalf("Test could not complete! (%s)", err.Error())
+	// }
+	//
+	// var buf bytes.Buffer
+	// w := lzw.NewWriter(&buf, lzw.MSB, 8)
+	// _, err = w.Write([]byte("Hello, World!"))
+	// if err != nil {
+	// 	t.Fatalf("Test could not complete! (%s)", err.Error())
+	// }
+	//
+	// err = w.Close()
+	// if err != nil {
+	// 	t.Fatalf("Test could not complete! (%s)", err.Error())
+	// }
+
+	tests := []struct {
+		name        string
+		body        []byte
+		encoding    ContentEncoding
+		expectError bool
+	}{
+		{
+			name:        "Unencoded hello world",
+			body:        []byte("Hello, world!"),
+			encoding:    ContentEncoding(""),
+			expectError: false,
+		},
+		{
+			name:        "Unencoded empty body",
+			body:        []byte(""),
+			encoding:    ContentEncoding(""),
+			expectError: false,
+		},
+		{
+			name:        "Gzip encoded empty body",
+			body:        []byte(""),
+			encoding:    ContentEncoding("x-gzip"),
+			expectError: false,
+		},
+		{
+			name:        "Compress encoded empty body",
+			body:        []byte(""),
+			encoding:    ContentEncoding("x-compress"),
+			expectError: false,
+		},
+		{
+			name:        "Gzip non-empty body",
+			body:        []byte("some data"),
+			encoding:    ContentEncoding("gzip"),
+			expectError: false,
+		},
+		{
+			name:        "Compress non-empty body",
+			body:        []byte("some more data"),
+			encoding:    ContentEncoding("compress"),
+			expectError: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var decoded []byte
+			res, err := encodeRequestBody(tt.body, tt.encoding)
+
+			ok := assert.ErrorStatus(t, err, tt.expectError)
+			if !ok {
+				return
+			}
+			reader := bytes.NewReader(res)
+
+			switch tt.encoding {
+			case ContentEncodingGZip, ContentEncodingXGzip:
+				reader, err := gzip.NewReader(reader)
+				if err != nil {
+					t.Fatalf("Test could not complete! (%s)", err.Error())
+				}
+				defer reader.Close()
+
+				decoded, err = io.ReadAll(reader)
+				if err != nil {
+					t.Fatalf("Test could not complete! (%s)", err.Error())
+				}
+			case ContentEncodingCompress, ContentEncodingXCompress:
+				reader := lzw.NewReader(reader, lzw.LSB, 8)
+				defer reader.Close()
+
+				decoded, err = io.ReadAll(reader)
+				if err != nil {
+					t.Fatalf("Test could not complete! (%s)", err.Error())
+				}
+			default:
+				decoded = res
+			}
+
+			assert.SliceEqual(t, decoded, tt.body)
 		})
 	}
 }

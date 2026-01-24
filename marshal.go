@@ -2,6 +2,8 @@ package http
 
 import (
 	"bytes"
+	"compress/gzip"
+	"compress/lzw"
 	"fmt"
 	"sort"
 	"strconv"
@@ -35,27 +37,28 @@ func (c code) marshal() []byte {
 func (h responseHeaders) marshal(hasBody bool) []byte {
 	var headers []byte
 
-	headers = append(headers, marshalHeader("Date", h.Date)...)
-	headers = append(headers, marshalHeader("Pragma", h.Pragma)...)
-	if h.Location != nil {
-		headers = append(headers, marshalHeader("Location", h.Location)...)
+	headers = append(headers, marshalHeader("Date", h.date)...)
+	headers = append(headers, marshalHeader("Pragma", h.pragma)...)
+
+	if h.location != nil {
+		headers = append(headers, marshalHeader("Location", h.location)...)
 	}
 
-	headers = append(headers, marshalHeader("Server", h.Server)...)
-	headers = append(headers, marshalHeader("WWW-Authenticate", h.WwwAuthenticate)...)
-	headers = append(headers, marshalHeader("Allow", h.Allow)...)
-	headers = append(headers, marshalHeader("Content-Encoding", h.ContentEncoding)...)
+	headers = append(headers, marshalHeader("Server", h.server)...)
+	headers = append(headers, marshalHeader("WWW-Authenticate", h.wwwAuthenticate)...)
+	headers = append(headers, marshalHeader("Allow", h.allow)...)
+	headers = append(headers, marshalHeader("Content-Encoding", h.contentEncoding)...)
 
 	if hasBody {
-		headers = append(headers, marshalHeader("Content-Length", h.ContentLength)...)
+		headers = append(headers, marshalHeader("Content-Length", h.contentLength)...)
 	}
 
-	headers = append(headers, marshalHeader("Content-Type", h.ContentType)...)
-	headers = append(headers, marshalHeader("Expires", h.Expires)...)
-	headers = append(headers, marshalHeader("Last-Modified", h.LastModified)...)
+	headers = append(headers, marshalHeader("Content-Type", h.contentType)...)
+	headers = append(headers, marshalHeader("Expires", h.expires)...)
+	headers = append(headers, marshalHeader("Last-Modified", h.lastModified)...)
 
-	for _, name := range getSortedKeys(h.Unrecognized) {
-		headers = fmt.Appendf(headers, "%s: %s%s", name, h.Unrecognized[name], constructs.Crlf)
+	for _, name := range getSortedKeys(h.unrecognized) {
+		headers = fmt.Appendf(headers, "%s: %s%s", name, h.unrecognized[name], constructs.Crlf)
 	}
 
 	return append(headers, constructs.Crlf...)
@@ -86,7 +89,7 @@ func (p PragmaDirectives) marshal() []byte {
 	var parts []string
 
 	if len(p.Flags) > 0 || len(p.Options) > 0 {
-		for _, flag := range p.Flags {
+		for _, flag := range getSortedKeys(p.Flags) {
 			parts = append(parts, flag)
 		}
 
@@ -200,11 +203,57 @@ func (ct ContentType) marshal() []byte {
 	return res
 }
 
-func getSortedKeys(m map[string]string) []string {
+func getSortedKeys[T any](m map[string]T) []string {
 	keys := make([]string, 0, len(m))
 	for k := range m {
 		keys = append(keys, k)
 	}
 	sort.Strings(keys)
 	return keys
+}
+
+func encodeRequestBody(body []byte, encoding ContentEncoding) ([]byte, error) {
+	var res []byte
+	var err error
+
+	switch encoding {
+	case ContentEncodingXGzip, ContentEncodingGZip:
+		res, err = gzipEncode(body)
+	case ContentEncodingXCompress, ContentEncodingCompress:
+		res, err = compressEncode(body)
+	default:
+		res, err = body, nil
+	}
+
+	if err != nil {
+		err = ServerError{message: fmt.Sprintf("unexpected issue decoding body: %s", err.Error())}
+	}
+
+	return res, err
+}
+
+func gzipEncode(data []byte) ([]byte, error) {
+	var b bytes.Buffer
+	w := gzip.NewWriter(&b)
+
+	_, err := w.Write(data)
+	if err != nil {
+		return b.Bytes(), err
+	}
+
+	err = w.Close()
+	return b.Bytes(), err
+}
+
+func compressEncode(data []byte) ([]byte, error) {
+	var b bytes.Buffer
+	w := lzw.NewWriter(&b, lzw.LSB, 8)
+
+	_, err := w.Write(data)
+	if err != nil {
+		return b.Bytes(), err
+	}
+
+	err = w.Close()
+	return b.Bytes(), err
 }

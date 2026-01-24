@@ -31,7 +31,7 @@ type RequestHeaders struct {
 	Authorization   AuthorizationCredentials
 	From            mail.Address
 	IfModifiedSince MessageTime
-	Referer         string
+	Referer         Uri
 	UserAgent       UserAgent
 	Allow           []Method
 	ContentEncoding ContentEncoding
@@ -49,4 +49,9 @@ type Request struct {
 	Line    RequestLine
 	Headers RequestHeaders
 	Body    Body
+}
+
+func (r Request) GetRawHeader(name string) (string, bool) {
+	value, ok := r.Headers.raw[name]
+	return value, ok
 }

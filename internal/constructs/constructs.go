@@ -37,7 +37,7 @@ func (b HttpByte) IsEscape() bool {
 }
 
 func (b HttpByte) IsPChar() bool {
-	return b.IsUnreserved() || b.IsEscape() || slices.Contains([]HttpByte{':', '@', '&', '=', '.'}, b)
+	return b.IsUnreserved() || b.IsEscape() || slices.Contains([]HttpByte{':', '@', '&', '=', '+'}, b)
 }
 
 func (b HttpByte) IsUnreserved() bool {
@@ -165,6 +165,25 @@ func ParseDate(d string) (time.Time, error) {
 
 }
 
+func validateQdText(t string) error {
+	i := 0
+	for i < len(t) {
+		isLws, next := lws.Check(t, i)
+		if isLws {
+			i = next
+			continue
+		}
+
+		c := HttpByte(t[i])
+		if !c.IsQdTextByte() {
+			return fmt.Errorf("qdtext contains invalid character")
+		}
+		i++
+	}
+
+	return nil
+}
+
 func validateQuotedString(qs string) error {
 	if len(qs) < 2 {
 		return fmt.Errorf("incomplete quote string (%s)", qs)
@@ -174,19 +193,9 @@ func validateQuotedString(qs string) error {
 		return fmt.Errorf("quoted string must begin and end with a \" character (%s)", qs)
 	}
 
-	i := 1
-	for i < len(qs)-1 {
-		isLws, next := lws.Check(qs, i)
-		if isLws {
-			i = next
-			continue
-		}
-
-		c := HttpByte(qs[i])
-		if !c.IsQdTextByte() {
-			return fmt.Errorf("quoted string contains invalid character (%s)", qs)
-		}
-		i++
+	err := validateQdText(qs[1 : len(qs)-1])
+	if err != nil {
+		return fmt.Errorf("%s (%s)", err.Error(), qs)
 	}
 
 	return nil
@@ -199,6 +208,21 @@ func ParseQuotedString(qs string) (string, error) {
 	}
 
 	return qs[1 : len(qs)-1], nil
+
+}
+
+func ParseUserQuotedString(s string) (string, error) {
+	err := validateQdText(s)
+	if err == nil {
+		return fmt.Sprintf(`"%s"`, s), nil
+	}
+
+	err = validateQuotedString(s)
+	if err == nil {
+		return s, nil
+	}
+
+	return "", fmt.Errorf("malformed input (%s)", s)
 
 }
 

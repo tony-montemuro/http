@@ -6,7 +6,7 @@ import (
 	"github.com/tony-montemuro/http/internal/assert"
 )
 
-func TestEscapeSequence_unescape(t *testing.T) {
+func TestUnescapeSequence(t *testing.T) {
 	tests := []struct {
 		name        string
 		arr         []byte
@@ -44,7 +44,7 @@ func TestEscapeSequence_unescape(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			res, err := escapeSequence(tt.arr).unescape(tt.index)
+			res, err := unescapeSequence(tt.arr, tt.index)
 
 			ok := assert.ErrorStatus(t, err, tt.expectError)
 			if !ok {
@@ -56,7 +56,195 @@ func TestEscapeSequence_unescape(t *testing.T) {
 	}
 }
 
-func AbsoluteUriParser_parse(t *testing.T) {
+func TestParseUri(t *testing.T) {
+	tests := []struct {
+		name        string
+		uri         []byte
+		expected    Uri
+		expectError bool
+	}{
+		{
+			name: "Standard Absolute HTTP",
+			uri:  []byte("http://google.com"),
+			expected: AbsoluteUri{
+				Scheme: []byte("http"),
+				Path:   []byte("//google.com"),
+			},
+			expectError: false,
+		},
+		{
+			name: "Standard Rooted Relative",
+			uri:  []byte("/usr/local"),
+			expected: RelativeUri{
+				Path: []byte("/usr/local"),
+			},
+			expectError: false,
+		},
+		{
+			name: "Network Path Relative",
+			uri:  []byte("//cdn.example.com/lib.js"),
+			expected: RelativeUri{
+				NetLoc: []byte("cdn.example.com"),
+				Path:   []byte("/lib.js"),
+			},
+			expectError: false,
+		},
+		{
+			name: "Simple Relative Path",
+			uri:  []byte("images/logo.png"),
+			expected: RelativeUri{
+				Path: []byte("images/logo.png"),
+			},
+			expectError: false,
+		},
+		{
+			name: "Underscore forces Relative",
+			uri:  []byte("my_app:data"),
+			expected: RelativeUri{
+				Path: []byte("my_app:data"),
+			},
+			expectError: false,
+		},
+		{
+			name: "Plus sign valid in Scheme",
+			uri:  []byte("my+app:data"),
+			expected: AbsoluteUri{
+				Scheme: []byte("my+app"),
+				Path:   []byte("data"),
+			},
+			expectError: false,
+		},
+		{
+			name: "Numeric Scheme",
+			uri:  []byte("123:456"),
+			expected: AbsoluteUri{
+				Scheme: []byte("123"),
+				Path:   []byte("456"),
+			},
+			expectError: false,
+		},
+		{
+			name: "Starts with colon (Relative)",
+			uri:  []byte(":config"),
+			expected: RelativeUri{
+				Path: []byte(":config"),
+			},
+			expectError: false,
+		},
+		{
+			name: "Shortest Absolute",
+			uri:  []byte("a:"),
+			expected: AbsoluteUri{
+				Scheme: []byte("a"),
+				Path:   []byte(""),
+			},
+			expectError: false,
+		},
+		{
+			name: "Query Only",
+			uri:  []byte("?q=search"),
+			expected: RelativeUri{
+				Query: []byte("q=search"),
+			},
+			expectError: false,
+		},
+		{
+			name: "Relative with Params",
+			uri:  []byte("file;a=1;b=2"),
+			expected: RelativeUri{
+				Path: []byte("file"),
+				Params: [][]byte{
+					[]byte("a=1"),
+					[]byte("b=2"),
+				},
+			},
+			expectError: false,
+		},
+		{
+			name:        "Invalid space",
+			uri:         []byte("hello world"),
+			expected:    nil,
+			expectError: true,
+		},
+		{
+			name:        "Invalid control char",
+			uri:         []byte("hello\tworld"),
+			expected:    nil,
+			expectError: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			res, err := parseUri(tt.uri)
+			ok := assert.ErrorStatus(t, err, tt.expectError)
+			if !ok {
+				return
+			}
+
+			switch e := tt.expected.(type) {
+			case AbsoluteUri:
+				r, ok := res.(AbsoluteUri)
+				if !ok {
+					t.Errorf("expected AbsoluteUri, got %T", res)
+					return
+				}
+
+				assert.SliceEqual(t, r.Path, e.Path)
+				assert.SliceEqual(t, r.Scheme, e.Scheme)
+			case RelativeUri:
+				r, ok := res.(RelativeUri)
+				if !ok {
+					t.Errorf("expected RelativeUri, got %T", res)
+				}
+
+				assert.SliceEqual(t, r.NetLoc, e.NetLoc)
+				assert.SliceEqual(t, r.Path, e.Path)
+				assert.MatrixEqual(t, r.Params, e.Params)
+				assert.SliceEqual(t, r.Query, e.Query)
+			default:
+				t.Fatalf("invalid expected value! cannot be nil")
+			}
+		})
+	}
+}
+
+func TestValidateStartsWithScheme(t *testing.T) {
+	tests := []struct {
+		name        string
+		uri         []byte
+		expectError bool
+	}{
+		{
+			name:        "Basic HTTP URL",
+			uri:         []byte("http://www.w3.org/pub/WWW/TheProject.html"),
+			expectError: false,
+		},
+		{
+			name:        "Valid scheme with special characters & digits",
+			uri:         []byte("0+1-2.3:foo.org/bar/baz.fun"),
+			expectError: false,
+		},
+		{
+			name:        "No colon",
+			uri:         []byte("http123"),
+			expectError: true,
+		},
+		{
+			name:        "Invalid scheme",
+			uri:         []byte("bad/character:foo"),
+			expectError: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.ErrorStatus(t, validateStartsWithScheme(tt.uri), tt.expectError)
+		})
+	}
+}
+
+func TestParseAbsoluteUri(t *testing.T) {
 	tests := []struct {
 		name        string
 		uri         []byte
@@ -137,7 +325,7 @@ func AbsoluteUriParser_parse(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			res, err := absoluteUriParser(tt.uri).Parse()
+			res, err := parseAbsoluteUri(tt.uri)
 
 			ok := assert.ErrorStatus(t, err, tt.expectError)
 			if !ok {
@@ -150,7 +338,7 @@ func AbsoluteUriParser_parse(t *testing.T) {
 	}
 }
 
-func RelativeUriParser_parse(t *testing.T) {
+func TestParseRelativeUri(t *testing.T) {
 	tests := []struct {
 		name        string
 		uri         []byte
@@ -248,7 +436,7 @@ func RelativeUriParser_parse(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			res, err := relativeUriParser(tt.uri).parse()
+			res, err := parseRelativeUri(tt.uri)
 
 			ok := assert.ErrorStatus(t, err, tt.expectError)
 			if !ok {
@@ -269,7 +457,7 @@ type pathExpected struct {
 	query  []byte
 }
 
-func TestAbsPathUriParser_parse(t *testing.T) {
+func TestParseAbsUri(t *testing.T) {
 	tests := []struct {
 		name        string
 		uri         []byte
@@ -279,13 +467,13 @@ func TestAbsPathUriParser_parse(t *testing.T) {
 		{
 			name:        "Root path",
 			uri:         []byte("/"),
-			expected:    pathExpected{path: []byte{'/'}, params: [][]byte{{}}, query: []byte{}},
+			expected:    pathExpected{path: []byte{'/'}, params: [][]byte{}, query: []byte{}},
 			expectError: false,
 		},
 		{
 			name:        "Uri with no params or query",
 			uri:         []byte("/info/document/1"),
-			expected:    pathExpected{path: []byte("/info/document/1"), params: [][]byte{{}}, query: []byte{}},
+			expected:    pathExpected{path: []byte("/info/document/1"), params: [][]byte{}, query: []byte{}},
 			expectError: false,
 		},
 		{
@@ -297,7 +485,7 @@ func TestAbsPathUriParser_parse(t *testing.T) {
 		{
 			name:        "Uri with no param",
 			uri:         []byte("/foo/bar?test=3&t;est"),
-			expected:    pathExpected{path: []byte("/foo/bar"), params: [][]byte{{}}, query: []byte("test=3&t;est")},
+			expected:    pathExpected{path: []byte("/foo/bar"), params: [][]byte{}, query: []byte("test=3&t;est")},
 			expectError: false,
 		},
 		{
@@ -309,7 +497,7 @@ func TestAbsPathUriParser_parse(t *testing.T) {
 		{
 			name:        "Uri with no params or path",
 			uri:         []byte("/?;"),
-			expected:    pathExpected{path: []byte{'/'}, params: [][]byte{{}}, query: []byte(";")},
+			expected:    pathExpected{path: []byte{'/'}, params: [][]byte{}, query: []byte(";")},
 			expectError: false,
 		},
 		{
@@ -321,7 +509,7 @@ func TestAbsPathUriParser_parse(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			path, params, query, err := absPathUriParser(tt.uri).parse()
+			path, params, query, err := parseAbsUri(tt.uri)
 
 			ok := assert.ErrorStatus(t, err, tt.expectError)
 			if !ok {
@@ -335,7 +523,7 @@ func TestAbsPathUriParser_parse(t *testing.T) {
 	}
 }
 
-func TestRelPathUriParser_parse(t *testing.T) {
+func TestParseRelPathUri(t *testing.T) {
 	tests := []struct {
 		name        string
 		uri         []byte
@@ -345,13 +533,13 @@ func TestRelPathUriParser_parse(t *testing.T) {
 		{
 			name:        "Empty input",
 			uri:         []byte(""),
-			expected:    pathExpected{path: []byte{}, params: [][]byte{{}}, query: []byte{}},
+			expected:    pathExpected{path: []byte{}, params: [][]byte{}, query: []byte{}},
 			expectError: false,
 		},
 		{
 			name:        "Uri with no params or query",
 			uri:         []byte("info/document/1"),
-			expected:    pathExpected{path: []byte("info/document/1"), params: [][]byte{{}}, query: []byte{}},
+			expected:    pathExpected{path: []byte("info/document/1"), params: [][]byte{}, query: []byte{}},
 			expectError: false,
 		},
 		{
@@ -363,7 +551,7 @@ func TestRelPathUriParser_parse(t *testing.T) {
 		{
 			name:        "Uri with no param",
 			uri:         []byte("foo/bar?test=3&t;est"),
-			expected:    pathExpected{path: []byte("foo/bar"), params: [][]byte{{}}, query: []byte("test=3&t;est")},
+			expected:    pathExpected{path: []byte("foo/bar"), params: [][]byte{}, query: []byte("test=3&t;est")},
 			expectError: false,
 		},
 		{
@@ -375,7 +563,7 @@ func TestRelPathUriParser_parse(t *testing.T) {
 		{
 			name:        "Uri with no params or path",
 			uri:         []byte("?;"),
-			expected:    pathExpected{path: []byte{}, params: [][]byte{{}}, query: []byte(";")},
+			expected:    pathExpected{path: []byte{}, params: [][]byte{}, query: []byte(";")},
 			expectError: false,
 		},
 		{
@@ -387,7 +575,7 @@ func TestRelPathUriParser_parse(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			path, params, query, err := relPathUriParser(tt.uri).parse()
+			path, params, query, err := parseRelPathUri(tt.uri)
 
 			ok := assert.ErrorStatus(t, err, tt.expectError)
 			if !ok {
@@ -401,7 +589,7 @@ func TestRelPathUriParser_parse(t *testing.T) {
 	}
 }
 
-func TestUriPathParser_parse(t *testing.T) {
+func TestParseUriPath(t *testing.T) {
 	tests := []struct {
 		name        string
 		path        []byte
@@ -472,7 +660,7 @@ func TestUriPathParser_parse(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			res, err := uriPathParser(tt.path).parse()
+			res, err := parseUriPath(tt.path)
 
 			ok := assert.ErrorStatus(t, err, tt.expectError)
 			if !ok {
@@ -484,7 +672,7 @@ func TestUriPathParser_parse(t *testing.T) {
 	}
 }
 
-func TestUriParamsParser_parse(t *testing.T) {
+func TestParseUriParams(t *testing.T) {
 	tests := []struct {
 		name        string
 		params      []byte
@@ -494,7 +682,7 @@ func TestUriParamsParser_parse(t *testing.T) {
 		{
 			name:        "No params",
 			params:      []byte{},
-			expected:    [][]byte{{}},
+			expected:    [][]byte{},
 			expectError: false,
 		},
 		{
@@ -545,7 +733,7 @@ func TestUriParamsParser_parse(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			res, err := uriParamsParser(tt.params).parse()
+			res, err := parseUriParams(tt.params)
 
 			ok := assert.ErrorStatus(t, err, tt.expectError)
 			if !ok {
@@ -557,7 +745,7 @@ func TestUriParamsParser_parse(t *testing.T) {
 	}
 }
 
-func TestUriQueryParser_parse(t *testing.T) {
+func TestParseUriQuery(t *testing.T) {
 	tests := []struct {
 		name        string
 		query       []byte
@@ -612,7 +800,7 @@ func TestUriQueryParser_parse(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			res, err := uriQueryParser(tt.query).parse()
+			res, err := parseUriQuery(tt.query)
 
 			ok := assert.ErrorStatus(t, err, tt.expectError)
 			if !ok {
@@ -620,62 +808,6 @@ func TestUriQueryParser_parse(t *testing.T) {
 			}
 
 			assert.SliceEqual(t, res, tt.expected)
-		})
-	}
-}
-
-func TestSafeUriParser_parse(t *testing.T) {
-	tests := []struct {
-		name        string
-		uri         string
-		expected    string
-		expectError bool
-	}{
-		{
-			name:        "Safe URI",
-			uri:         "https://smbelite.com",
-			expected:    "https://smbelite.com",
-			expectError: false,
-		},
-		{
-			name:        "Not safe URI",
-			uri:         "bad\turi",
-			expectError: true,
-		},
-		{
-			name:        "Safe URI with pound",
-			uri:         "foo#bar",
-			expected:    "foo#bar",
-			expectError: false,
-		},
-		{
-			name:        "Safe URI with ampersand",
-			uri:         "foo%3Abar",
-			expected:    "foo:bar",
-			expectError: false,
-		},
-		{
-			name:        "Unsafe URI from escaped contorl character",
-			uri:         "foo%13bar",
-			expectError: true,
-		},
-		{
-			name:        "Unsafe URI from escaped unsafe character",
-			uri:         "foo%3Cbar",
-			expectError: true,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			res, err := safeUriParser(tt.uri).parse()
-
-			ok := assert.ErrorStatus(t, err, tt.expectError)
-			if !ok {
-				return
-			}
-
-			assert.Equal(t, res, tt.expected)
 		})
 	}
 }

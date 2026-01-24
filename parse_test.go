@@ -16,76 +16,103 @@ func TestParseRequest(t *testing.T) {
 	tests := []struct {
 		name        string
 		data        []byte
+		server      Server
 		expectError bool
 	}{
 		{
 			name:        "Minimum valid request",
 			data:        []byte("GET / HTTP/1.0\r\n\r\n"),
+			server:      Server{ReadTimeout: 5000, MaxHeaderBytes: 4000, MaxBodyBytes: 64000},
 			expectError: false,
 		},
 		{
 			name:        "No body",
 			data:        []byte("GET /index.html HTTP/1.0\r\nHost: example.com\r\nUser-Agent: test\r\n\r\n"),
+			server:      Server{ReadTimeout: 5000, MaxHeaderBytes: 4000, MaxBodyBytes: 64000},
 			expectError: false,
 		},
 		{
 			name:        "Single header with folding",
 			data:        []byte("GET / HTTP/1.0\r\nUser-Agent: Test\r\n continuation\r\n\r\n"),
+			server:      Server{ReadTimeout: 5000, MaxHeaderBytes: 4000, MaxBodyBytes: 64000},
 			expectError: false,
 		},
 		{
 			name:        "Multiple folded headers",
 			data:        []byte("GET / HTTP/1.0\r\nX-Test: a\r\n\tb\r\nX-Next: c\r\n d\r\n\r\n"),
+			server:      Server{ReadTimeout: 5000, MaxHeaderBytes: 4000, MaxBodyBytes: 64000},
 			expectError: false,
 		},
 		{
 			name:        "Entity body with Content-Length",
 			data:        []byte("POST /submit HTTP/1.0\r\nContent-Length: 5\r\n\r\nhello"),
+			server:      Server{ReadTimeout: 5000, MaxHeaderBytes: 4000, MaxBodyBytes: 64000},
 			expectError: false,
 		},
 		{
 			name:        "Headers with strange but legal LWS",
 			data:        []byte("GET / HTTP/1.0\r\nX-Test:\tvalue\r\n\r\n"),
+			server:      Server{ReadTimeout: 5000, MaxHeaderBytes: 4000, MaxBodyBytes: 64000},
 			expectError: false,
 		},
 		{
 			name:        "Empty generic header value",
 			data:        []byte("GET / HTTP/1.0\r\nX-Empty:\r\n\r\n"),
+			server:      Server{ReadTimeout: 5000, MaxHeaderBytes: 4000, MaxBodyBytes: 64000},
 			expectError: false,
 		},
 		{
 			name:        "No header terminator",
 			data:        []byte("GET / HTTP/1.0\r\nHost: example.com\r\n"),
+			server:      Server{ReadTimeout: 5000, MaxHeaderBytes: 4000, MaxBodyBytes: 64000},
 			expectError: true,
 		},
 		{
 			name:        "Missing CRLF after Request-Line",
 			data:        []byte("GET / HTTP/1.0\nHost: example.com\r\n\r\n"),
+			server:      Server{ReadTimeout: 5000, MaxHeaderBytes: 4000, MaxBodyBytes: 64000},
 			expectError: true,
 		},
 		{
 			name:        "No header field-name",
 			data:        []byte("GET / 1.0\r\n continuation\r\n"),
+			server:      Server{ReadTimeout: 5000, MaxHeaderBytes: 4000, MaxBodyBytes: 64000},
 			expectError: true,
 		},
 		{
 			name:        "Content-Length larger than remaining bytes",
 			data:        []byte("POST /submit HTTP/1.0\r\nContent-Length: 10\r\nX-Foo:\t\"Test\"\r\n\r\nhello"),
+			server:      Server{ReadTimeout: 5000, MaxHeaderBytes: 4000, MaxBodyBytes: 64000},
 			expectError: true,
 		},
 		{
 			name:        "?",
 			data:        []byte("GET / HTTP/1.0\r\n\r\nHost: example.com\r\n\r\n"),
+			server:      Server{ReadTimeout: 5000, MaxHeaderBytes: 4000, MaxBodyBytes: 64000},
 			expectError: false,
 		},
 		{
 			name:        "??",
 			data:        []byte("GET / HTTP/1.0\r\n\r\nhello"),
+			server:      Server{ReadTimeout: 5000, MaxHeaderBytes: 4000, MaxBodyBytes: 64000},
 			expectError: false,
 		},
 		{
 			name:        "Garbage before Request-Line",
 			data:        []byte("\r\nGET / HTTP/1.0\r\n\r\n"),
+			server:      Server{ReadTimeout: 5000, MaxHeaderBytes: 4000, MaxBodyBytes: 64000},
+			expectError: true,
+		},
+		{
+			name:        "Headers exceeds limit",
+			data:        []byte("GET / HTTP/1.0\nHost: example.com\r\n\r\n"),
+			server:      Server{ReadTimeout: 5000, MaxHeaderBytes: 1, MaxBodyBytes: 64000},
+			expectError: true,
+		},
+		{
+			name:        "Content-Length exceeds limit",
+			data:        []byte("POST /submit HTTP/1.0\r\nContent-Length: 5\r\n\r\nhello"),
+			server:      Server{ReadTimeout: 5000, MaxHeaderBytes: 4000, MaxBodyBytes: 4},
 			expectError: true,
 		},
 	}
@@ -102,7 +129,7 @@ func TestParseRequest(t *testing.T) {
 				server.Write(tt.data)
 			}()
 
-			_, err := parseRequest(client)
+			_, err := parseRequest(client, tt.server)
 			assert.ErrorStatus(t, err, tt.expectError)
 		})
 	}
@@ -118,7 +145,7 @@ func TestParseRequestLine(t *testing.T) {
 		{
 			name:        "Standard GET method",
 			line:        []byte("GET / HTTP/1.0"),
-			expected:    RequestLine{Method: Method("GET"), Uri: RelativeUri{Path: []byte{'/'}, Params: [][]byte{{}}, Query: []byte{}}, Version: string("1.0")},
+			expected:    RequestLine{Method: Method("GET"), Uri: RelativeUri{Path: []byte{'/'}, Params: [][]byte{}, Query: []byte{}}, Version: string("1.0")},
 			expectError: false,
 		},
 		{
@@ -387,7 +414,7 @@ func TestParseRequestHeaders(t *testing.T) {
 			}
 
 			assert.DateEqual(t, res.Date.date, tt.expected.Date.date)
-			assert.SliceEqual(t, res.Pragma.Flags, tt.expected.Pragma.Flags)
+			assert.MapEqual(t, res.Pragma.Flags, tt.expected.Pragma.Flags)
 			assert.MapEqual(t, res.Pragma.Options, tt.expected.Pragma.Options)
 			assert.Equal(t, res.Authorization.Scheme, tt.expected.Authorization.Scheme)
 			assert.MapEqual(t, res.Authorization.Parameters, tt.expected.Authorization.Parameters)
@@ -579,13 +606,13 @@ func TestParsePragmaDirectives(t *testing.T) {
 		{
 			name:        "Standard case (no-cache)",
 			pragmaVal:   "no-cache",
-			expected:    PragmaDirectives{Flags: []string{"no-cache"}},
+			expected:    PragmaDirectives{Flags: map[string]bool{"no-cache": true}},
 			expectError: false,
 		},
 		{
 			name:        "Single extension (foo)",
 			pragmaVal:   "foo",
-			expected:    PragmaDirectives{Flags: []string{"foo"}},
+			expected:    PragmaDirectives{Flags: map[string]bool{"foo": true}},
 			expectError: false,
 		},
 		{
@@ -597,19 +624,25 @@ func TestParsePragmaDirectives(t *testing.T) {
 		{
 			name:        "Multiple directives (no-cache, foo=bar)",
 			pragmaVal:   "no-cache, foo=bar",
-			expected:    PragmaDirectives{Flags: []string{"no-cache"}, Options: map[string]string{"foo": "bar"}},
+			expected:    PragmaDirectives{Flags: map[string]bool{"no-cache": true}, Options: map[string]string{"foo": "bar"}},
 			expectError: false,
 		},
 		{
-			name:        "Extra whitespace (  no-cache \t,  \t foo=bar ,     flag)",
-			pragmaVal:   "  no-cache \t,  \t foo=bar ,     flag",
-			expected:    PragmaDirectives{Flags: []string{"no-cache", "flag"}, Options: map[string]string{"foo": "bar"}},
+			name:      "Extra whitespace (  no-cache \t,  \t foo=bar ,     flag)",
+			pragmaVal: "  no-cache \t,  \t foo=bar ,     flag",
+			expected: PragmaDirectives{Flags: map[string]bool{
+				"no-cache": true,
+				"flag":     true,
+			}, Options: map[string]string{"foo": "bar"}},
 			expectError: false,
 		},
 		{
-			name:        "Multiple flags and options (no-cache, foo=bar, baz, this=works)",
-			pragmaVal:   "no-cache, foo=bar, baz, this=works",
-			expected:    PragmaDirectives{Flags: []string{"no-cache", "baz"}, Options: map[string]string{"foo": "bar", "this": "works"}},
+			name:      "Multiple flags and options (no-cache, foo=bar, baz, this=works)",
+			pragmaVal: "no-cache, foo=bar, baz, this=works",
+			expected: PragmaDirectives{Flags: map[string]bool{
+				"no-cache": true,
+				"baz":      true,
+			}, Options: map[string]string{"foo": "bar", "this": "works"}},
 			expectError: false,
 		},
 		{
@@ -643,7 +676,7 @@ func TestParsePragmaDirectives(t *testing.T) {
 				return
 			}
 
-			assert.SliceEqual(t, res.Flags, tt.expected.Flags)
+			assert.MapEqual(t, res.Flags, tt.expected.Flags)
 			assert.MapEqual(t, res.Options, tt.expected.Options)
 		})
 	}
@@ -1900,9 +1933,17 @@ func TestParseRequestBody(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	w := lzw.NewWriter(&buf, lzw.MSB, 8)
-	w.Write([]byte("Hello, World!"))
-	w.Close()
+	w := lzw.NewWriter(&buf, lzw.LSB, 8)
+	_, err = w.Write([]byte("Hello, World!"))
+	if err != nil {
+		t.Fatalf("Test could not complete! (%s)", err.Error())
+	}
+
+	err = w.Close()
+	if err != nil {
+		t.Fatalf("Test could not complete! (%s)", err.Error())
+	}
+
 	compress := buf.Bytes()
 
 	tests := []struct {
@@ -2066,7 +2107,7 @@ func TestGzipDecode(t *testing.T) {
 	}
 }
 
-func TestCompressDecoder(t *testing.T) {
+func TestCompressDecode(t *testing.T) {
 	tests := []struct {
 		name     string
 		input    string
@@ -2102,9 +2143,17 @@ func TestCompressDecoder(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			var buf bytes.Buffer
-			w := lzw.NewWriter(&buf, lzw.MSB, 8)
-			w.Write([]byte(tt.input))
-			w.Close()
+			w := lzw.NewWriter(&buf, lzw.LSB, 8)
+
+			_, err := w.Write([]byte(tt.input))
+			if err != nil {
+				t.Fatalf("Test could not complete! (%s)", err.Error())
+			}
+
+			err = w.Close()
+			if err != nil {
+				t.Fatalf("Test could not complete! (%s)", err.Error())
+			}
 
 			res, err := compressDecode(bytes.NewReader(buf.Bytes()))
 			if err != nil {

@@ -729,6 +729,70 @@ func TestParseQuotedString(t *testing.T) {
 	}
 }
 
+func TestParseUserQuotedString(t *testing.T) {
+	tests := []parseCheck{
+		{
+			name:        "Standard quoted string",
+			string:      "\"abc!123\"",
+			expected:    "\"abc!123\"",
+			expectError: false,
+		},
+		{
+			name:        "QD Text without double quotes",
+			string:      "abc!123",
+			expected:    `"abc!123"`,
+			expectError: false,
+		},
+		{
+			name:        "Quoted string with whitespace",
+			string:      "\"d\t\t\tef \t45 6\"",
+			expected:    "\"d\t\t\tef \t45 6\"",
+			expectError: false,
+		},
+		{
+			name:        "QD text with whitespace",
+			string:      "d\t\t\tef \t45 6",
+			expected:    "\"d\t\t\tef \t45 6\"",
+			expectError: false,
+		},
+		{
+			name:        "Quoted string with trailing whitespace",
+			string:      "\"foobar\t\t\t\t\t\t    \t \"",
+			expected:    "\"foobar\t\t\t\t\t\t    \t \"",
+			expectError: false,
+		},
+		{
+			name:        "Quote string with internal double quote",
+			string:      "\"this is b\"ad!\"",
+			expectError: true,
+		},
+		{
+			name:        "Empty string",
+			string:      "",
+			expected:    "\"\"",
+			expectError: false,
+		},
+		{
+			name:        "Single double quote",
+			string:      "\"",
+			expectError: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			res, err := ParseUserQuotedString(tt.string)
+
+			ok := assert.ErrorStatus(t, err, tt.expectError)
+			if !ok {
+				return
+			}
+
+			assert.Equal(t, res, tt.expected)
+		})
+	}
+}
+
 func TestParseWord(t *testing.T) {
 	tests := []parseCheck{
 		{

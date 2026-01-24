@@ -19,18 +19,22 @@ import (
 	"github.com/tony-montemuro/http/internal/rules"
 )
 
-func parseRequest(conn net.Conn) (*Request, error) {
-	conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+func parseRequest(conn net.Conn, server Server) (*Request, error) {
+	conn.SetReadDeadline(time.Now().Add(time.Duration(server.ReadTimeout) * time.Millisecond))
 	defer conn.SetReadDeadline(time.Time{})
 
-	reader := bufio.NewReader(conn)
-
+	limitedReader := &io.LimitedReader{
+		R: conn,
+		N: int64(server.MaxHeaderBytes),
+	}
+	reader := bufio.NewReader(limitedReader)
 	lineBuf, err := reader.ReadBytes('\n')
 	if err != nil {
 		return nil, err
 	}
+
 	if !bytes.HasSuffix(lineBuf, []byte(constructs.Crlf)) {
-		return nil, fmt.Errorf("malformed header suffix")
+		return nil, ClientError{message: "malformed header suffix"}
 	}
 
 	line, err := parseRequestLine(bytes.Trim(lineBuf, constructs.Crlf))
@@ -54,6 +58,9 @@ func parseRequest(conn net.Conn) (*Request, error) {
 	headers, err := parseRequestHeaders(bytes.Trim(headerBuf.Bytes(), constructs.Crlf))
 	if err != nil {
 		return nil, err
+	}
+	if headers.ContentLength > ContentLength(server.MaxBodyBytes) {
+		return nil, ClientError{message: fmt.Sprintf("Content-Length exceeds max allowed by server: %d", server.MaxBodyBytes)}
 	}
 
 	bodyBytes := make([]byte, headers.ContentLength)
@@ -82,7 +89,7 @@ func parseRequestLine(data []byte) (RequestLine, error) {
 		return RequestLine{}, ClientError{message: fmt.Sprintf("Invalid request line: issue with request method (%s)", err.Error())}
 	}
 
-	uri, err := relativeUriParser(parts[1]).parse()
+	uri, err := parseRelativeUri(parts[1])
 	if err != nil {
 		return RequestLine{}, err
 	}
@@ -281,7 +288,7 @@ func (rh *RequestHeaders) setPragma(data string) error {
 }
 
 func parsePragmaDirectives(data string) (PragmaDirectives, error) {
-	directives := PragmaDirectives{Options: make(map[string]string)}
+	directives := PragmaDirectives{Options: make(map[string]string), Flags: make(map[string]bool)}
 	parts := rules.Extract(data)
 	if len(parts) == 0 {
 		return directives, fmt.Errorf("at least one pragma directive is required (%s)", data)
@@ -309,7 +316,7 @@ func parsePragmaDirectives(data string) (PragmaDirectives, error) {
 
 			directives.Options[key] = w
 		} else {
-			directives.Flags = append(directives.Flags, part)
+			directives.Flags[part] = true
 		}
 	}
 
@@ -318,7 +325,7 @@ func parsePragmaDirectives(data string) (PragmaDirectives, error) {
 }
 
 func (rh *RequestHeaders) setReferer(data string) error {
-	uri, err := safeUriParser(data).parse()
+	uri, err := parseUri([]byte(data))
 	if err != nil {
 		return fmt.Errorf("Invalid Referer header: %s", err.Error())
 	}
@@ -515,7 +522,6 @@ func extractComment(data string, start int) (string, int, error) {
 	}
 
 	return comment, i, nil
-
 }
 
 func extractProductVersion(data string, start int) (string, int) {
@@ -781,7 +787,6 @@ func parseRequestBody(data []byte, rh RequestHeaders) ([]byte, error) {
 func decodeRequestBody(body []byte, encoding ContentEncoding) ([]byte, error) {
 	var res []byte
 	var err error
-	fmt.Println()
 	reader := bytes.NewReader(body)
 
 	switch encoding {
@@ -811,9 +816,8 @@ func gzipDecode(r io.Reader) ([]byte, error) {
 }
 
 func compressDecode(r io.Reader) ([]byte, error) {
-	reader := lzw.NewReader(r, lzw.MSB, 8)
+	reader := lzw.NewReader(r, lzw.LSB, 8)
 	defer reader.Close()
 
-	data, err := io.ReadAll(reader)
-	return data, err
+	return io.ReadAll(reader)
 }
