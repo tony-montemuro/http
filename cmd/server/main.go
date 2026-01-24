@@ -1,11 +1,6 @@
 package main
 
-import (
-	"log/slog"
-	"os"
-
-	"github.com/tony-montemuro/http"
-)
+import "github.com/tony-montemuro/http"
 
 func handler(r http.Request, w *http.ResponseWriter) {
 	w.AddServerHeader([]byte("go"))
@@ -14,9 +9,6 @@ func handler(r http.Request, w *http.ResponseWriter) {
 }
 
 func main() {
-	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
-		AddSource: true,
-	}))
-	srv := http.Server{ErrorLog: logger, Handler: http.HandlerFunc(handler)}
+	srv := http.Server{Handler: http.HandlerFunc(handler)}
 	srv.Serve()
 }
